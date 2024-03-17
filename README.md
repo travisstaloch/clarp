@@ -8,19 +8,19 @@ Create command line parsers from zig struct, union, and enum declarations.
 * dump parsed results
 
 # Overview
-Union types create alternative commands.  Commands are field names in kebab case.
+Union types create alternative commands.  Commands are field names.
 
-Struct types create sequences of options.  Options are field names in kebab case with leading dashes such as `--text-color` for field `text_color`.  Named options can be parsed out of order.  Unnamed options will be assigned to the next unset field.
+Struct types create sequences of options.  Options are field names with leading dashes such as `--text_color` for field `text_color`.  Named options can be parsed out of order.  An unnamed, positional argument will be assigned to the next unset field in field order.
 
-Tuple types create unnamed sequences.
+Tuple types create unnamed sequences and are parsed strictly by position.
 
-Bool types create flags and may be specified as `--flag` or `true`/`false` when unnamed.  They are optional and default to false.
+Bool field types create 'flags' and may be specified as `--flag` or `true`/`false` when unnamed.  They are always optional and default to false.
 
 ## Zig version
 This package was developed against zig version 0.12.0-dev.3074+ae7f3fc36
 
 # Usage
-You can find all these examples and more in the [tests](src/tests.zig).
+You can find these examples and more in the [tests](src/tests.zig).
 
 ## Add clarp dependency
 ```zig
@@ -108,16 +108,28 @@ $ zig-out/bin/testexe --opt1 'opt1 value'
 opt1: opt1 value
 opt2: a
 ```
+
+Here opt2 is named and occurs before an unnamed positional opt1.
+```console
+$ zig-out/bin/testexe --opt2 b 'opt1 value'
+
+opt1: opt1 value
+opt2: b
+```
 #### Alias names
 ```console
 $ zig-out/bin/testexe -o1 'opt1 value'
-# dump omitted
+
+opt1: opt1 value
+opt2: a
 ```
 #### No name
 Unnamed args are assigned to the next unset field in field declaration order.
 ```console
-$ zig-out/bin/testexe 'opt1 value'
-# dump omitted
+$ zig-out/bin/testexe 'opt1 value' b
+
+opt1: opt1 value
+opt2: b
 ```
 #### Diagnostics
 ```console
@@ -130,4 +142,8 @@ error at argument 1: --foo 'opt1 value'
 
 # Todo
 - [ ] document commands
-- [ ] test enum fields with kebab case
+- [ ] allow '--' option
+- [ ] parse long names before aliases
+- [ ] add Option to auto create shorts
+  - [ ] validate shorts and aliases don't collide
+- [ ] add colors to help output
