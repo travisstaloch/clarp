@@ -2,7 +2,7 @@ const std = @import("std");
 const clarp = @import("clarp");
 const Options = clarp.Options;
 
-const TestCmd = clarp.Command(union(enum) {
+const TestParser = clarp.Parser(union(enum) {
     decode: struct { []const u8 },
     info: Filepath,
     handshake: struct { filepath: []const u8, peer_address: []const u8 },
@@ -39,25 +39,25 @@ const TestCmd = clarp.Command(union(enum) {
     const Filepath = struct { filepath: []const u8 };
 }, .{});
 
-const Root = std.meta.FieldType(TestCmd, .root);
+const Root = std.meta.FieldType(TestParser, .root);
 fn expect(args: []const []const u8, expected: Root) !void {
-    const x = try TestCmd.parse(args);
+    const x = try TestParser.parse(args);
     // exercise dump() and printHelp() to catch compile errors
-    try TestCmd.printHelp(Root, "", .{}, std.io.null_writer, 0);
-    try TestCmd.dump(x, "", .{}, std.io.null_writer, 0);
+    try TestParser.printHelp(Root, "", .{}, std.io.null_writer, 0);
+    try TestParser.dump(x, "", .{}, std.io.null_writer, 0);
     try x.dump("", .{}, std.io.null_writer, 0);
     return testing.expectEqualDeep(expected, x.root);
 }
 
 const testing = std.testing;
 test "Command" {
-    try testing.expectError(error.UnknownCommand, TestCmd.parse(
+    try testing.expectError(error.UnknownCommand, TestParser.parse(
         &.{ "exe", "asfd" },
     ));
-    try testing.expectError(error.ExtraArgs, TestCmd.parse(
+    try testing.expectError(error.ExtraArgs, TestParser.parse(
         &.{ "exe", "decode", "1", "2", "3" },
     ));
-    try testing.expectError(error.NotEnoughArgs, TestCmd.parse(&.{"exe"}));
+    try testing.expectError(error.NotEnoughArgs, TestParser.parse(&.{"exe"}));
 
     try expect(&.{ "exe", "decode", "foo" }, .{ .decode = .{"foo"} });
     try expect(&.{ "exe", "info", "foo" }, .{ .info = .{ .filepath = "foo" } });
@@ -142,7 +142,7 @@ test "Command" {
         .{ .run = .{ .f = .b } },
     );
     {
-        const x = try TestCmd.parse(&.{ "exe", "run", "arr", "foo" });
+        const x = try TestParser.parse(&.{ "exe", "run", "arr", "foo" });
         try testing.expectEqualStrings("foo", x.root.run.arr[0..3]);
     }
     try expect(
@@ -153,7 +153,7 @@ test "Command" {
     try expect(&.{ "exe", "opt", "foo" }, .{ .opt = "foo" });
 }
 
-const SimpleOptions = clarp.Command(struct {
+const SimpleOptions = clarp.Parser(struct {
     opt1: []const u8,
     opt2: enum { a, b } = .a,
 

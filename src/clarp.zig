@@ -33,7 +33,7 @@ pub fn defaultPrintUsage(writer: anytype, comptime fmt: []const u8, exe_path: []
 ///
 /// bool types are flags may be specified as --flag (or true/false when unnamed)
 /// and they implicitly default to false.
-pub fn Command(
+pub fn Parser(
     comptime T: type,
     comptime options: struct {
         help_flags: type = HelpFlags,
@@ -99,7 +99,8 @@ pub fn Command(
             try std.io.tty.detectConfig(f).setColor(f, .bright_yellow);
             try writer.writeAll("^");
             try std.io.tty.detectConfig(f).setColor(f, .yellow);
-            for (0..args[err_pos].len -| 1) |_| try writer.writeAll("~");
+            if (err_pos < args.len)
+                for (0..args[err_pos].len -| 1) |_| try writer.writeAll("~");
             try std.io.tty.detectConfig(f).setColor(f, .reset);
             try writer.writeAll("\n");
         }
@@ -148,7 +149,7 @@ pub fn Command(
                             .false => false,
                         };
                     }
-                    std.debug.print("invalid bool '{s}'\n", .{args.*[0]});
+                    log.err("invalid bool '{s}'", .{args.*[0]});
                     return error.InvalidBoolean;
                 },
                 .Optional => |x| if (std.mem.eql(u8, args.*[0], "null")) {
@@ -159,7 +160,7 @@ pub fn Command(
                     args.* = args.*[1..];
                     return e;
                 } else {
-                    std.debug.print("invalid enum tag '{s}'\n", .{args.*[0]});
+                    log.err("invalid enum tag '{s}'", .{args.*[0]});
                     return error.InvalidEnum;
                 },
                 .Array => |x| {
@@ -173,7 +174,7 @@ pub fn Command(
                     var buf: [0x100]u8 = undefined;
                     const arg = try toCase(.snake, &buf, args.*[0]);
                     const tag = std.meta.stringToEnum(std.meta.Tag(V), arg) orelse {
-                        std.debug.print("unknown command '{s}'\n", .{arg});
+                        log.err("unknown command '{s}'", .{arg});
                         return error.UnknownCommand;
                     };
                     args.* = args.*[1..];
@@ -228,7 +229,7 @@ pub fn Command(
                                 }
                             }
                             // error if positional start with '--'
-                            std.debug.print("unknown option '{s}'\n", .{args.*[0]});
+                            log.err("unknown option '{s}'", .{args.*[0]});
                             return error.UnknownOption;
                         }
 
@@ -236,7 +237,7 @@ pub fn Command(
                         // positionals
                         var iter = fields_seen.iterator(.{ .kind = .unset });
                         const next_fieldi = iter.next() orelse {
-                            std.debug.print("extra args {s}\n", .{args.*});
+                            log.err("extra args {s}", .{args.*});
                             return error.ExtraArgs;
                         };
                         inline for (x.fields, 0..) |f, fi| {
@@ -264,10 +265,10 @@ pub fn Command(
 
                     log.debug("fields seen {}/{}", .{ fields_seen.count(), x.fields.len });
                     if (fields_seen.count() != x.fields.len) {
-                        std.debug.print("missing fields: ", .{});
+                        log.err("missing fields: ", .{});
                         var iter = fields_seen.iterator(.{ .kind = .unset });
                         while (iter.next()) |fi| {
-                            std.debug.print("'{s}', ", .{std.meta.fieldNames(V)[fi]});
+                            log.err("'{s}', ", .{std.meta.fieldNames(V)[fi]});
                         }
                         return error.MissingFields;
                     }
