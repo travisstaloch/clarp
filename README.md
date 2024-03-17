@@ -1,10 +1,16 @@
 # About
 
-Create simple command line parsers derived from Zig struct, union, and enum declarations.
+Create command line parsers from zig struct, union, and enum declarations.
 
+# Features
+
+* customizable generated help/usage messages
+* dump parsed results
+
+# Overview
 Union types create alternative commands.  Commands are field names in kebab case.
 
-Struct types create sequences of options.  Options are field names in kebab case with leading dashes (i.e. `--field-name` for `field_name`). When options are named they may be given out of order.  Unnamed options will be assigned to the next unset field.
+Struct types create sequences of options.  Options are field names in kebab case with leading dashes such as `--text-color` for field `text_color`.  Named options can be parsed out of order.  Unnamed options will be assigned to the next unset field.
 
 Tuple types create unnamed sequences.
 
