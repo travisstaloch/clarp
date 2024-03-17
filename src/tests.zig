@@ -37,7 +37,7 @@ const TestCmd = clarp.Command(union(enum) {
     opt: ?[]const u8,
 
     const Filepath = struct { filepath: []const u8 };
-});
+}, .{});
 
 const Root = std.meta.FieldType(TestCmd, .root);
 fn expect(args: []const []const u8, expected: Root) !void {
@@ -151,4 +151,44 @@ test "Command" {
     );
     try expect(&.{ "exe", "opt", "null" }, .{ .opt = null });
     try expect(&.{ "exe", "opt", "foo" }, .{ .opt = "foo" });
+}
+
+const SimpleOptions = clarp.Command(struct {
+    opt1: []const u8,
+    opt2: enum { a, b } = .a,
+
+    pub const options = Options(@This()){
+        .opt1 = .{
+            .alias = "-o1",
+            .desc = "first option description",
+        },
+    };
+}, .{ .usage_fmt = "\nUSAGE: $ {s} <options>...\n\noptions:" });
+
+test SimpleOptions {
+    const opts = try SimpleOptions.parse(&.{ "/path/to/exe", "--opt1", "foo" });
+    try testing.expectEqualDeep(
+        SimpleOptions.Root{
+            .opt1 = "foo",
+            .opt2 = .a,
+        },
+        opts.root,
+    );
+}
+
+pub const std_options = std.Options{ .log_level = .warn };
+pub fn main() !void {
+    var arena = std.heap.ArenaAllocator.init(std.heap.page_allocator);
+    defer arena.deinit();
+    const allocator = arena.allocator();
+
+    const args = try std.process.argsAlloc(allocator);
+    const opts = SimpleOptions.parse(args) catch |e| switch (e) {
+        error.HelpShown => return,
+        else => {
+            SimpleOptions.help(args[0]);
+            return e;
+        },
+    };
+    std.debug.print("{}\n", .{opts});
 }

@@ -15,6 +15,12 @@ pub fn Options(comptime T: type) type {
     return std.enums.EnumFieldStruct(T, Option, .{});
 }
 
+/// default flags for showing help/usage
+pub const HelpFlags = enum { help, @"--help", @"-h" };
+pub const default_usage_fmt = "\nUSAGE: {s} <command> <options>...\ncommands:";
+pub fn defaultPrintUsage(writer: anytype, comptime fmt: []const u8, exe_path: []const u8) void {
+    writer.print(fmt, .{exe_path}) catch unreachable;
+}
 ///
 /// union types describe alternatives.  their field names don't require any
 /// leading dashes and correspond to commands.
@@ -23,26 +29,79 @@ pub fn Options(comptime T: type) type {
 /// leading dashes (ie --field-name).  when fields are named they may be given
 /// out of order.  unnamed values will be assigned to the next unset field.
 ///
-/// tuple types describe unnamed sequences.
+/// tuple types describe strictly unnamed sequences.
 ///
 /// bool types are flags may be specified as --flag (or true/false when unnamed)
 /// and they implicitly default to false.
-pub fn Command(comptime T: type) type {
+pub fn Command(
+    comptime T: type,
+    comptime options: struct {
+        help_flags: type = HelpFlags,
+        usage_fmt: []const u8 = default_usage_fmt,
+        printUsage: fn (
+            writer: anytype,
+            comptime fmt: []const u8,
+            exe_path: []const u8,
+        ) void = defaultPrintUsage,
+    },
+) type {
     return struct {
-        root: T,
+        root: Root,
         exe_path: []const u8,
 
         const Self = @This();
+        pub const Root = T;
 
         pub fn parse(args: []const []const u8) !Self {
             // log.debug("args[1] {s}", .{args[1]});
             var rest = args[1..];
+            if (rest.len != 0) {
+                if (std.meta.stringToEnum(options.help_flags, rest[0])) |_| {
+                    help(args[0]);
+                    return error.HelpShown;
+                }
+            }
+            const root = parsePayload(&rest, T, null) catch |e| {
+                try printError(std.io.getStdErr(), args, rest);
+                return e;
+            };
             const self = Self{
-                .root = try parsePayload(&rest, T, null),
+                .root = root,
                 .exe_path = args[0],
             };
             if (rest.len != 0) return error.ExtraArgs;
             return self;
+        }
+
+        fn printError(f: std.fs.File, args: []const []const u8, rest: []const []const u8) !void {
+            const writer = f.writer();
+            // count bytes written for error formatting
+            var cw = std.io.countingWriter(writer);
+            const cwriter = cw.writer();
+            try std.io.tty.detectConfig(f).setColor(f, .bright_red);
+            try cwriter.writeAll("error");
+            try std.io.tty.detectConfig(f).setColor(f, .reset);
+            const err_pos = args.len - rest.len;
+            try cwriter.print(" at argument {}: ", .{err_pos});
+            // stop counting bytes at err_pos
+            var w = cwriter.any();
+            for (args[1..], 1..) |arg, i| {
+                if (i != 1) try w.writeAll(" ");
+                if (i >= err_pos) w = writer.any();
+                const has_space = std.mem.indexOfScalar(u8, arg, ' ') != null;
+                if (has_space) try w.writeByte('\'');
+                try w.writeAll(arg);
+                if (has_space) try w.writeByte('\'');
+            }
+            try writer.writeByte('\n');
+            for (0..cw.bytes_written) |_| try writer.writeAll(" ");
+            // colored pointer and squiggles
+            try std.io.tty.detectConfig(f).setColor(f, .bright_yellow);
+            try writer.writeAll("^");
+            try std.io.tty.detectConfig(f).setColor(f, .yellow);
+            for (0..args[err_pos].len -| 1) |_| try writer.writeAll("~");
+            try std.io.tty.detectConfig(f).setColor(f, .reset);
+            try writer.writeAll("\n");
         }
 
         fn isFlagType(comptime U: type) bool {
@@ -89,6 +148,7 @@ pub fn Command(comptime T: type) type {
                             .false => false,
                         };
                     }
+                    std.debug.print("invalid bool '{s}'\n", .{args.*[0]});
                     return error.InvalidBoolean;
                 },
                 .Optional => |x| if (std.mem.eql(u8, args.*[0], "null")) {
@@ -98,7 +158,10 @@ pub fn Command(comptime T: type) type {
                 .Enum => if (std.meta.stringToEnum(V, args.*[0])) |e| {
                     args.* = args.*[1..];
                     return e;
-                } else return error.InvalidEnum,
+                } else {
+                    std.debug.print("invalid enum tag '{s}'\n", .{args.*[0]});
+                    return error.InvalidEnum;
+                },
                 .Array => |x| {
                     if (args.*[0].len > x.len) return error.ArrayTooShort;
                     defer args.* = args.*[1..];
@@ -164,7 +227,9 @@ pub fn Command(comptime T: type) type {
                                     continue :args;
                                 }
                             }
-                            // choose not to return error here, allowing positionals to start with '--'
+                            // error if positional start with '--'
+                            std.debug.print("unknown option '{s}'\n", .{args.*[0]});
+                            return error.UnknownOption;
                         }
 
                         log.debug("positional fields seen {} arg {s}", .{ fields_seen.count(), args.*[0] });
@@ -215,20 +280,20 @@ pub fn Command(comptime T: type) type {
         pub fn format(
             self: Self,
             comptime fmt: []const u8,
-            options: std.fmt.FormatOptions,
+            fmt_opts: std.fmt.FormatOptions,
             writer: anytype,
         ) !void {
             if (fmt.len == 0)
-                try dump(self.root, fmt, options, writer, 0)
+                try dump(self.root, fmt, fmt_opts, writer, 0)
             else if (comptime std.mem.eql(u8, fmt, "help")) {
                 help(self.exe_path);
             } else @compileError("unknown fmt '" ++ fmt ++ "'");
         }
 
-        fn dump(
+        pub fn dump(
             v: anytype,
             comptime fmt: []const u8,
-            options: std.fmt.FormatOptions,
+            fmt_opts: std.fmt.FormatOptions,
             writer: anytype,
             depth: u8,
         ) !void {
@@ -237,14 +302,14 @@ pub fn Command(comptime T: type) type {
                 else => |x| if (comptime isZigString(V))
                     try writer.writeAll(v)
                 else if (x == .Pointer and x.Pointer.size == .One)
-                    try dump(v.*, fmt, options, writer, depth)
+                    try dump(v.*, fmt, fmt_opts, writer, depth)
                 else
                     @compileError("TODO " ++ @tagName(x) ++ " " ++ @typeName(V)),
                 .Void => {},
-                .Int, .Bool, .Float => try std.fmt.formatType(v, fmt, options, writer, 0),
-                .Array => try std.fmt.formatType(v, "any", options, writer, 0),
+                .Int, .Bool, .Float => try std.fmt.formatType(v, fmt, fmt_opts, writer, 0),
+                .Array => try std.fmt.formatType(v, "any", fmt_opts, writer, 0),
                 .Optional => if (v) |u|
-                    try dump(u, fmt, options, writer, depth)
+                    try dump(u, fmt, fmt_opts, writer, depth)
                 else
                     try writer.writeAll("null"),
                 .Enum => try writer.writeAll(@tagName(v)),
@@ -252,32 +317,36 @@ pub fn Command(comptime T: type) type {
                     try writer.writeByte('\n');
                     try writer.writeByteNTimes(' ', depth * 2);
                     try writer.print("{s}: ", .{f.name});
-                    try dump(@field(v, f.name), fmt, options, writer, depth + 1);
+                    try dump(@field(v, f.name), fmt, fmt_opts, writer, depth + 1);
                 },
                 .Union => switch (v) {
                     inline else => |payload, tag| {
                         try writer.writeByte('\n');
                         try writer.writeByteNTimes(' ', depth * 2);
                         try writer.print("{s}: ", .{@tagName(tag)});
-                        try dump(payload, fmt, options, writer, depth + 1);
+                        try dump(payload, fmt, fmt_opts, writer, depth + 1);
                     },
                 },
             }
         }
 
-        pub fn help(exe_path: []const u8, options: struct { usage_text: ?[]const u8 = null }) void {
+        pub fn help(exe_path: []const u8) void {
             const writer = std.io.getStdErr().writer();
-            if (options.usage_text) |text|
-                writer.writeAll(text) catch unreachable
-            else
-                writer.print("\nUSAGE: {s} <command> <options>...\n----  commands  ----", .{std.fs.path.basename(exe_path)}) catch unreachable;
-            printHelp(T, "", .{}, writer, 0) catch unreachable;
+            options.printUsage(writer, options.usage_fmt, std.fs.path.basename(exe_path));
+            writer.writeAll("\n  ") catch unreachable;
+            inline for (@typeInfo(options.help_flags).Enum.fields, 0..) |f, i| {
+                if (i != 0) writer.writeAll(" ") catch unreachable;
+                writer.writeAll(f.name) catch unreachable;
+            }
+            writer.writeAll(" // show this message. must be first argument.") catch unreachable;
+            printHelp(T, "", .{}, writer, 1) catch unreachable;
+            writer.writeAll("\n\n") catch unreachable;
         }
 
         pub fn printHelp(
             comptime V: type,
             comptime fmt: []const u8,
-            options: std.fmt.FormatOptions,
+            fmt_opts: std.fmt.FormatOptions,
             writer: anytype,
             depth: u8,
         ) !void {
@@ -306,7 +375,7 @@ pub fn Command(comptime T: type) type {
                     try writer.writeByteNTimes(' ', depth * 2);
                     if (!x.is_tuple) try writer.print("--{s}", .{kebab(f.name)});
                     try printAlias(V, writer, f);
-                    try printHelp(f.type, fmt, options, writer, depth + 1);
+                    try printHelp(f.type, fmt, fmt_opts, writer, depth + 1);
                     if (f.default_value) |d| {
                         const dv = @as(*const f.type, @ptrCast(@alignCast(d))).*;
                         switch (@typeInfo(f.type)) {
@@ -325,7 +394,7 @@ pub fn Command(comptime T: type) type {
                     try writer.writeByteNTimes(' ', depth * 2);
                     try writer.print("{s}", .{kebab(f.name)});
                     try printAlias(V, writer, f);
-                    try printHelp(f.type, fmt, options, writer, depth + 1);
+                    try printHelp(f.type, fmt, fmt_opts, writer, depth + 1);
                     try printDesc(V, writer, f);
                 },
             }
