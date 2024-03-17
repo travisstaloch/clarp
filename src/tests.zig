@@ -157,7 +157,7 @@ const SimpleOptions = clarp.Command(struct {
     opt1: []const u8,
     opt2: enum { a, b } = .a,
 
-    pub const options = Options(@This()){
+    pub const options = clarp.Options(@This()){
         .opt1 = .{
             .alias = "-o1",
             .desc = "first option description",
