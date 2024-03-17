@@ -79,7 +79,7 @@ pub fn Parser(
             var cw = std.io.countingWriter(writer);
             const cwriter = cw.writer();
             try std.io.tty.detectConfig(f).setColor(f, .bright_red);
-            try cwriter.writeAll("error");
+            try cwriter.writeAll("error:");
             try std.io.tty.detectConfig(f).setColor(f, .reset);
             const err_pos = args.len - rest.len;
             try cwriter.print(" at argument {}: ", .{err_pos});
@@ -171,16 +171,14 @@ pub fn Parser(
                     return a;
                 },
                 .Union => {
-                    var buf: [0x100]u8 = undefined;
-                    const arg = try toCase(.snake, &buf, args.*[0]);
-                    const tag = std.meta.stringToEnum(std.meta.Tag(V), arg) orelse {
-                        log.err("unknown command '{s}'", .{arg});
+                    const tag = std.meta.stringToEnum(std.meta.Tag(V), args.*[0]) orelse {
+                        log.err("unknown command '{s}'", .{args.*[0]});
                         return error.UnknownCommand;
                     };
                     args.* = args.*[1..];
                     switch (tag) {
                         inline else => |t| {
-                            const tagname = comptime std.fmt.comptimePrint("{}", .{kebab(@tagName(t))});
+                            const tagname = comptime std.fmt.comptimePrint("{s}", .{@tagName(t)});
                             return @unionInit(V, @tagName(t), try parsePayload(
                                 args,
                                 std.meta.TagPayload(V, t),
@@ -219,7 +217,7 @@ pub fn Parser(
                         const is_long = std.mem.startsWith(u8, args.*[0], "--");
                         if (is_long) {
                             inline for (x.fields) |f| {
-                                const fname = comptime std.fmt.comptimePrint("{}", .{kebab(f.name)});
+                                const fname = comptime std.fmt.comptimePrint("{s}", .{f.name});
                                 if (std.mem.eql(u8, args.*[0][2..], fname)) {
                                     log.debug("found long {s} {s}", .{ args.*[0], fname });
                                     args.* = args.*[@intFromBool(!isFlagType(f.type))..];
@@ -374,7 +372,7 @@ pub fn Parser(
                 .Struct => |x| inline for (x.fields) |f| {
                     try writer.writeByte('\n');
                     try writer.writeByteNTimes(' ', depth * 2);
-                    if (!x.is_tuple) try writer.print("--{s}", .{kebab(f.name)});
+                    if (!x.is_tuple) try writer.print("--{s}", .{f.name});
                     try printAlias(V, writer, f);
                     try printHelp(f.type, fmt, fmt_opts, writer, depth + 1);
                     if (f.default_value) |d| {
@@ -393,7 +391,7 @@ pub fn Parser(
                 .Union => |x| inline for (x.fields) |f| {
                     try writer.writeByte('\n');
                     try writer.writeByteNTimes(' ', depth * 2);
-                    try writer.print("{s}", .{kebab(f.name)});
+                    try writer.print("{s}", .{f.name});
                     try printAlias(V, writer, f);
                     try printHelp(f.type, fmt, fmt_opts, writer, depth + 1);
                     try printDesc(V, writer, f);
@@ -417,48 +415,12 @@ pub fn Parser(
     };
 }
 
-const Case = enum { kebab, snake };
-const FmtName = struct {
-    name: []const u8,
-    case: Case,
-
-    pub fn format(
-        self: FmtName,
-        comptime _: []const u8,
-        _: std.fmt.FormatOptions,
-        writer: anytype,
-    ) !void {
-        switch (self.case) {
-            .kebab => for (self.name) |c| {
-                try writer.writeByte(if (c == '_') '-' else c);
-            },
-            .snake => for (self.name) |c| {
-                try writer.writeByte(if (c == '-') '_' else c);
-            },
-        }
-    }
-};
-
-fn kebab(name: []const u8) FmtName {
-    return .{ .name = name, .case = .kebab };
-}
-
-fn snake(name: []const u8) FmtName {
-    return .{ .name = name, .case = .snake };
-}
-
-fn toCase(case: Case, buf: []u8, name: []const u8) ![]const u8 {
-    var fbs = std.io.fixedBufferStream(buf);
-    try fbs.writer().print("{}", .{FmtName{ .name = name, .case = case }});
-    return fbs.getWritten();
-}
-
 pub fn isZigString(comptime T: type) bool {
     return comptime blk: {
         // Only pointer types can be strings, no optionals
         const info = @typeInfo(T);
         if (info != .Pointer) break :blk false;
-        const ptr = &info.Pointer;
+        const ptr = info.Pointer;
         // Check for CV qualifiers that would prevent coerction to []const u8
         if (ptr.is_volatile or ptr.is_allowzero) break :blk false;
         // If it's already a slice, simple check.

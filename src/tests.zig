@@ -33,7 +33,6 @@ const TestParser = clarp.Parser(union(enum) {
         f: enum { a, b },
         arr: [20]u8,
     },
-    has_underscores: []const u8,
     opt: ?[]const u8,
 
     const Filepath = struct { filepath: []const u8 };
@@ -70,11 +69,11 @@ test "Command" {
         .{ .handshake = .{ .filepath = "foo", .peer_address = "bar" } },
     );
     try expect(
-        &.{ "exe", "handshake", "--peer-address", "foo", "bar" },
+        &.{ "exe", "handshake", "--peer_address", "foo", "bar" },
         .{ .handshake = .{ .filepath = "bar", .peer_address = "foo" } },
     );
     try expect(
-        &.{ "exe", "handshake", "--peer-address", "foo", "--filepath", "bar" },
+        &.{ "exe", "handshake", "--peer_address", "foo", "--filepath", "bar" },
         .{ .handshake = .{ .filepath = "bar", .peer_address = "foo" } },
     );
     try expect(
@@ -83,6 +82,10 @@ test "Command" {
     );
     try expect(
         &.{ "exe", "download", "--outpath", "foo", "22" },
+        .{ .download = .{ .piece_index = 22, .outpath = "foo" } },
+    );
+    try expect(
+        &.{ "exe", "download", "--piece_index", "22", "foo" },
         .{ .download = .{ .piece_index = 22, .outpath = "foo" } },
     );
     try expect(
@@ -145,10 +148,6 @@ test "Command" {
         const x = try TestParser.parse(&.{ "exe", "run", "arr", "foo" });
         try testing.expectEqualStrings("foo", x.root.run.arr[0..3]);
     }
-    try expect(
-        &.{ "exe", "has-underscores", "foo" },
-        .{ .has_underscores = "foo" },
-    );
     try expect(&.{ "exe", "opt", "null" }, .{ .opt = null });
     try expect(&.{ "exe", "opt", "foo" }, .{ .opt = "foo" });
 }
