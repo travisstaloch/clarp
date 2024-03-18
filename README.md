@@ -8,10 +8,11 @@ Create command line parsers from zig struct, union, and enum declarations.
   * automatically generated
   * automatically printed on parsing errors
   * customizable via options
-  * prints to stderr by default, supports any io.AnyWriter or print() method
+  * writes to parse_options.err_writer (default stderr)
+  * from any print() method: `std.debug.print("{help}", .{parse_result});`
 * colored diagnostics which point to errors
 * dump parsed results
-  * supports with any io.AnyWriter or print() method
+  * from any print() method: `std.debug.print("{}", .{parse_result});`
 
 # Overview
 Union types create alternative commands.  Commands match field names.
@@ -61,7 +62,7 @@ pub fn main() !void {
     const allocator = arena.allocator();
 
     const args = try std.process.argsAlloc(allocator);
-    const opts = ArgParser.parse(args) catch |e| switch (e) {
+    const opts = ArgParser.parse(args, .{}) catch |e| switch (e) {
         error.HelpShown => return,
         else => return e,
     };
@@ -149,7 +150,7 @@ error at argument 1: --foo 'opt1 value'
 
 # Other features
 ## Overrides
-users can manually parse options by providing an `overrides` struct.  if any of its pub method names match an argument, that method will be called with an args pointer and optional user ctx pointer.  see test "parseWithUserCtx" in [tests](src/tests.zig).
+users can manually parse options by providing an `overrides` struct.  if any of its pub method names match an argument, that method will be called with an args pointer and optional user ctx pointer.  see test "overrides" in [tests](src/tests.zig).
 
 # Todo
 - [ ] document commands
@@ -158,6 +159,6 @@ users can manually parse options by providing an `overrides` struct.  if any of 
   - [ ] validate shorts and aliases don't collide
 - [ ] add colors to help output
 - [ ] support some 'end of sequence' marker, allow user to override
-- [ ] parse options
-  - [ ] add user_ctx to options, default null
-  - [ ] pass errwriter: io.AnyWriter to parse, default stderr
+- [x] parse options
+  - [x] add user_ctx to options, default null
+  - [x] pass errwriter: io.AnyWriter to parse, default stderr
