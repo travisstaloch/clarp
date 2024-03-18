@@ -27,11 +27,11 @@ pub const UserParseFn = fn (args: *[]const []const u8, ctx: ?*anyopaque) void;
 
 pub const ParseOptions = struct {
     user_ctx: ?*anyopaque = null,
-    err_writer: std.io.AnyWriter = std.io.getStdErr().writer().any(),
+    err_writer: ?std.io.AnyWriter = null,
 };
 
 pub const HelpOptions = struct {
-    err_writer: std.io.AnyWriter = std.io.getStdErr().writer().any(),
+    err_writer: ?std.io.AnyWriter = null,
 };
 
 fn logErr(comptime fmt: anytype, args: anytype) void {
@@ -368,7 +368,7 @@ pub fn Parser(
         }
 
         pub fn help(exe_path: []const u8, help_options: HelpOptions) void {
-            const writer = help_options.err_writer;
+            const writer = help_options.err_writer orelse std.io.getStdErr().writer().any();
             options.printUsage(writer, options.usage_fmt, std.fs.path.basename(exe_path));
             writer.writeAll("\n  ") catch unreachable;
             inline for (@typeInfo(options.help_flags).Enum.fields, 0..) |f, i| {

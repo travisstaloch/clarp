@@ -45,6 +45,8 @@ fn expect(args: []const []const u8, expected: Root) !void {
     try TestParser.printHelp(Root, "", .{}, std.io.null_writer.any(), 0);
     try TestParser.dump(x, "", .{}, std.io.null_writer, 0);
     try x.dump("", .{}, std.io.null_writer, 0);
+    try std.io.null_writer.print("{help}", .{x});
+    try std.io.null_writer.print("{}", .{x});
     return testing.expectEqualDeep(expected, x.root);
 }
 
