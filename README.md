@@ -140,10 +140,13 @@ error at argument 1: --foo 'opt1 value'
 # usage omitted
 ```
 
+# Other features
+* allow users to manually parse arbitrary options by providing an `overrides` struct.  if any of its pub method names match an argument, that method will be called with an args pointer and optional user ctx pointer.  see test "parseWithUserCtx" in [tests](src/tests.zig).
+
 # Todo
 - [ ] document commands
-- [ ] allow '--' option
 - [ ] parse long names before aliases
 - [ ] add Option to auto create shorts
   - [ ] validate shorts and aliases don't collide
 - [ ] add colors to help output
+- [ ] support some 'end of sequence' marker, allow user to override
