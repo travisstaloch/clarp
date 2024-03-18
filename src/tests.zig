@@ -152,6 +152,32 @@ test "Command" {
     try expect(&.{ "exe", "opt", "foo" }, .{ .opt = "foo" });
 }
 
+const Ctx = struct { foo: u8 = 0, bar: u8 = 0 };
+test "overrides" {
+    var ctx = Ctx{};
+    _ = try clarp.Parser(struct {
+        pub const overrides = struct {
+            pub fn @"--foo"(args: *[]const []const u8, user_ctx: ?*anyopaque) void {
+                args.* = args.*[1..];
+                @as(*Ctx, @ptrCast(user_ctx)).foo =
+                    std.fmt.parseInt(u8, args.*[0], 10) catch unreachable;
+                args.* = args.*[1..];
+            }
+            pub fn @"--"(args: *[]const []const u8, user_ctx: ?*anyopaque) void {
+                args.* = args.*[1..];
+                testing.expectEqualStrings("bar", args.*[0]) catch unreachable;
+                args.* = args.*[1..];
+                @as(*Ctx, @ptrCast(user_ctx)).bar =
+                    std.fmt.parseInt(u8, args.*[0], 10) catch unreachable;
+                args.* = args.*[1..];
+            }
+        };
+    }, .{}).parseWithUserCtx(&.{ "exe", "--foo", "99", "--", "bar", "100" }, &ctx);
+
+    try testing.expectEqual(99, ctx.foo);
+    try testing.expectEqual(100, ctx.bar);
+}
+
 const SimpleOptions = clarp.Parser(struct {
     opt1: []const u8,
     opt2: enum { a, b } = .a,

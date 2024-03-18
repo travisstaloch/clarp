@@ -3,8 +3,8 @@
 //!
 
 const std = @import("std");
+const mem = std.mem;
 const log = std.log.scoped(.cli_parse);
-const clarp = @This();
 
 pub const Option = struct {
     alias: ?[]const u8 = null,
@@ -21,6 +21,8 @@ pub const default_usage_fmt = "\nUSAGE: {s} <command> <options>...\ncommands:";
 pub fn defaultPrintUsage(writer: anytype, comptime fmt: []const u8, exe_path: []const u8) void {
     writer.print(fmt, .{exe_path}) catch unreachable;
 }
+
+pub const UserParseFn = fn (args: *[]const []const u8, ctx: ?*anyopaque) void;
 ///
 /// union types describe alternatives.  their field names don't require any
 /// leading dashes and correspond to commands.
@@ -48,11 +50,18 @@ pub fn Parser(
     return struct {
         root: Root,
         exe_path: []const u8,
+        user_context: ?*anyopaque = null,
 
         const Self = @This();
         pub const Root = T;
 
+        /// parse command line args without user_ctx
         pub fn parse(args: []const []const u8) !Self {
+            return parseWithUserCtx(args, null);
+        }
+
+        /// parse command line args with user_ctx
+        pub fn parseWithUserCtx(args: []const []const u8, user_ctx: ?*anyopaque) !Self {
             // log.debug("args[1] {s}", .{args[1]});
             var rest = args[1..];
             if (rest.len != 0) {
@@ -61,7 +70,7 @@ pub fn Parser(
                     return error.HelpShown;
                 }
             }
-            const root = parsePayload(&rest, T, null) catch |e| {
+            const root = parsePayload(&rest, T, null, user_ctx) catch |e| {
                 try printError(std.io.getStdErr(), args, rest);
                 return e;
             };
@@ -88,7 +97,7 @@ pub fn Parser(
             for (args[1..], 1..) |arg, i| {
                 if (i != 1) try w.writeAll(" ");
                 if (i >= err_pos) w = writer.any();
-                const has_space = std.mem.indexOfScalar(u8, arg, ' ') != null;
+                const has_space = mem.indexOfScalar(u8, arg, ' ') != null;
                 if (has_space) try w.writeByte('\'');
                 try w.writeAll(arg);
                 if (has_space) try w.writeByte('\'');
@@ -113,6 +122,7 @@ pub fn Parser(
             args: *[]const []const u8,
             comptime V: type,
             field_name: ?[]const u8,
+            ctx: ?*anyopaque,
         ) !V {
             const info = @typeInfo(V);
             // structs and void
@@ -136,7 +146,7 @@ pub fn Parser(
                 .Bool => {
                     log.debug("bool {s}", .{args.*[0]});
                     if (field_name) |n| {
-                        if (std.mem.eql(u8, args.*[0], n)) {
+                        if (mem.eql(u8, args.*[0], n)) {
                             args.* = args.*[1..];
                             return true;
                         }
@@ -152,10 +162,10 @@ pub fn Parser(
                     log.err("invalid bool '{s}'", .{args.*[0]});
                     return error.InvalidBoolean;
                 },
-                .Optional => |x| if (std.mem.eql(u8, args.*[0], "null")) {
+                .Optional => |x| if (mem.eql(u8, args.*[0], "null")) {
                     args.* = args.*[1..];
                     return null;
-                } else return try parsePayload(args, x.child, field_name),
+                } else return try parsePayload(args, x.child, field_name, ctx),
                 .Enum => if (std.meta.stringToEnum(V, args.*[0])) |e| {
                     args.* = args.*[1..];
                     return e;
@@ -183,12 +193,13 @@ pub fn Parser(
                                 args,
                                 std.meta.TagPayload(V, t),
                                 tagname,
+                                ctx,
                             ));
                         },
                     }
                 },
                 .Struct => |x| {
-                    var payload: V = std.mem.zeroInit(V, .{});
+                    var payload: V = mem.zeroInit(V, .{});
                     var fields_seen = std.StaticBitSet(x.fields.len).initEmpty();
 
                     args: while (args.len > 0) {
@@ -197,16 +208,26 @@ pub fn Parser(
                                 log.debug("{s}: {any}", .{ f.name, @field(payload, f.name) });
                         }
 
+                        if (@hasDecl(V, "overrides")) {
+                            inline for (comptime std.meta.declarations(V.overrides)) |decl| {
+                                if (mem.eql(u8, decl.name, args.*[0])) {
+                                    const userParseFn: UserParseFn = @field(V.overrides, decl.name);
+                                    userParseFn(args, ctx);
+                                    continue :args;
+                                }
+                            }
+                        }
+
                         // look for alias names
                         if (@hasDecl(V, "options")) {
                             inline for (@typeInfo(@TypeOf(V.options)).Struct.fields) |sf| {
                                 const opt: Option = @field(V.options, sf.name);
                                 const alias = opt.alias orelse continue;
-                                if (std.mem.eql(u8, args.*[0], alias)) {
+                                if (mem.eql(u8, args.*[0], alias)) {
                                     log.debug("found alias {s} {s}", .{ args.*[0], sf.name });
                                     const Ft = @TypeOf(@field(payload, sf.name));
                                     args.* = args.*[@intFromBool(!isFlagType(Ft))..];
-                                    @field(payload, sf.name) = try parsePayload(args, Ft, alias);
+                                    @field(payload, sf.name) = try parsePayload(args, Ft, alias, ctx);
                                     fields_seen.set(std.meta.fieldIndex(V, sf.name).?);
                                     continue :args;
                                 }
@@ -214,14 +235,14 @@ pub fn Parser(
                         }
 
                         log.debug("arg {s}", .{args.*[0]});
-                        const is_long = std.mem.startsWith(u8, args.*[0], "--");
+                        const is_long = mem.startsWith(u8, args.*[0], "--");
                         if (is_long) {
                             inline for (x.fields) |f| {
                                 const fname = comptime std.fmt.comptimePrint("{s}", .{f.name});
-                                if (std.mem.eql(u8, args.*[0][2..], fname)) {
+                                if (mem.eql(u8, args.*[0][2..], fname)) {
                                     log.debug("found long {s} {s}", .{ args.*[0], fname });
                                     args.* = args.*[@intFromBool(!isFlagType(f.type))..];
-                                    @field(payload, f.name) = try parsePayload(args, f.type, "--" ++ fname);
+                                    @field(payload, f.name) = try parsePayload(args, f.type, "--" ++ fname, ctx);
                                     fields_seen.set(std.meta.fieldIndex(V, f.name).?);
                                     continue :args;
                                 }
@@ -231,7 +252,7 @@ pub fn Parser(
                             return error.UnknownOption;
                         }
 
-                        log.debug("positional fields seen {} arg {s}", .{ fields_seen.count(), args.*[0] });
+                        log.debug("parsing positional. fields seen {} arg {s}", .{ fields_seen.count(), args.*[0] });
                         // positionals
                         var iter = fields_seen.iterator(.{ .kind = .unset });
                         const next_fieldi = iter.next() orelse {
@@ -240,12 +261,13 @@ pub fn Parser(
                         };
                         inline for (x.fields, 0..) |f, fi| {
                             if (fi == next_fieldi) {
-                                @field(payload, f.name) = try parsePayload(args, f.type, f.name);
+                                @field(payload, f.name) = try parsePayload(args, f.type, f.name, ctx);
                                 fields_seen.set(fi);
                                 continue :args;
                             }
                         }
-                        unreachable; // TODO report error
+
+                        @panic("unreachable");
                     }
 
                     // set field default values if provided
@@ -262,11 +284,12 @@ pub fn Parser(
                     }
 
                     log.debug("fields seen {}/{}", .{ fields_seen.count(), x.fields.len });
-                    if (fields_seen.count() != x.fields.len) {
+                    const field_names = std.meta.fieldNames(V);
+                    if (field_names.len != 0 and fields_seen.count() != x.fields.len) {
                         log.err("missing fields: ", .{});
                         var iter = fields_seen.iterator(.{ .kind = .unset });
                         while (iter.next()) |fi| {
-                            log.err("'{s}', ", .{std.meta.fieldNames(V)[fi]});
+                            log.err("'{s}', ", .{field_names[fi]});
                         }
                         return error.MissingFields;
                     }
@@ -284,7 +307,7 @@ pub fn Parser(
         ) !void {
             if (fmt.len == 0)
                 try dump(self.root, fmt, fmt_opts, writer, 0)
-            else if (comptime std.mem.eql(u8, fmt, "help")) {
+            else if (comptime mem.eql(u8, fmt, "help")) {
                 help(self.exe_path);
             } else @compileError("unknown fmt '" ++ fmt ++ "'");
         }
@@ -300,10 +323,12 @@ pub fn Parser(
             switch (@typeInfo(V)) {
                 else => |x| if (comptime isZigString(V))
                     try writer.writeAll(v)
-                else if (x == .Pointer and x.Pointer.size == .One)
-                    try dump(v.*, fmt, fmt_opts, writer, depth)
-                else
-                    @compileError("TODO " ++ @tagName(x) ++ " " ++ @typeName(V)),
+                else if (x == .Pointer and x.Pointer.size == .One) {
+                    if (V == *anyopaque)
+                        try writer.print("{*}", .{v})
+                    else
+                        try dump(v.*, fmt, fmt_opts, writer, depth);
+                } else @compileError("TODO " ++ @tagName(x) ++ " " ++ @typeName(V)),
                 .Void => {},
                 .Int, .Bool, .Float => try std.fmt.formatType(v, fmt, fmt_opts, writer, 0),
                 .Array => try std.fmt.formatType(v, "any", fmt_opts, writer, 0),
