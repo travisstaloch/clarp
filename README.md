@@ -24,7 +24,7 @@ Tuple types create unnamed sequences and are parsed strictly by position.
 Bool field types create 'flags' and may be specified as `--flag` or `true`/`false` when unnamed.  They are always optional and default to false.
 
 ## Zig version
-This package was developed against zig version 0.12.0-dev.3074+ae7f3fc36
+This package was developed against zig version 0.12.0-dev.3343+294f51814
 
 # Usage
 You can find examples and more in the [tests](src/tests.zig).

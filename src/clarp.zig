@@ -12,7 +12,8 @@ pub const Option = struct {
 };
 
 pub fn Options(comptime T: type) type {
-    return std.enums.EnumFieldStruct(T, Option, .{});
+    const Fe = std.meta.FieldEnum(T);
+    return std.enums.EnumFieldStruct(Fe, Option, .{});
 }
 
 /// default flags for showing help/usage
@@ -32,6 +33,11 @@ pub const ParseOptions = struct {
 pub const HelpOptions = struct {
     err_writer: std.io.AnyWriter = std.io.getStdErr().writer().any(),
 };
+
+fn logErr(comptime fmt: anytype, args: anytype) void {
+    if (@import("builtin").is_test) return;
+    log.err(fmt, args);
+}
 ///
 /// union types describe alternatives.  their field names don't require any
 /// leading dashes and correspond to commands.
@@ -87,6 +93,7 @@ pub fn Parser(
         }
 
         fn printError(f: std.fs.File, args: []const []const u8, rest: []const []const u8) !void {
+            if (@import("builtin").is_test) return;
             const writer = f.writer();
             // count bytes written for error formatting
             var cw = std.io.countingWriter(writer);
@@ -163,7 +170,7 @@ pub fn Parser(
                             .false => false,
                         };
                     }
-                    log.err("invalid bool '{s}'", .{args.*[0]});
+                    logErr("invalid bool '{s}'", .{args.*[0]});
                     return error.InvalidBoolean;
                 },
                 .Optional => |x| if (mem.eql(u8, args.*[0], "null")) {
@@ -174,7 +181,7 @@ pub fn Parser(
                     args.* = args.*[1..];
                     return e;
                 } else {
-                    log.err("invalid enum tag '{s}'", .{args.*[0]});
+                    logErr("invalid enum tag '{s}'", .{args.*[0]});
                     return error.InvalidEnum;
                 },
                 .Array => |x| {
@@ -186,7 +193,7 @@ pub fn Parser(
                 },
                 .Union => {
                     const tag = std.meta.stringToEnum(std.meta.Tag(V), args.*[0]) orelse {
-                        log.err("unknown command '{s}'", .{args.*[0]});
+                        logErr("unknown command '{s}'", .{args.*[0]});
                         return error.UnknownCommand;
                     };
                     args.* = args.*[1..];
@@ -252,7 +259,7 @@ pub fn Parser(
                                 }
                             }
                             // error if positional start with '--'
-                            log.err("unknown option '{s}'", .{args.*[0]});
+                            logErr("unknown option '{s}'", .{args.*[0]});
                             return error.UnknownOption;
                         }
 
@@ -260,7 +267,7 @@ pub fn Parser(
                         // positionals
                         var iter = fields_seen.iterator(.{ .kind = .unset });
                         const next_fieldi = iter.next() orelse {
-                            log.err("extra args {s}", .{args.*});
+                            logErr("extra args {s}", .{args.*});
                             return error.ExtraArgs;
                         };
                         inline for (x.fields, 0..) |f, fi| {
@@ -290,10 +297,10 @@ pub fn Parser(
                     log.debug("fields seen {}/{}", .{ fields_seen.count(), x.fields.len });
                     const field_names = std.meta.fieldNames(V);
                     if (field_names.len != 0 and fields_seen.count() != x.fields.len) {
-                        log.err("missing fields: ", .{});
+                        logErr("missing fields: ", .{});
                         var iter = fields_seen.iterator(.{ .kind = .unset });
                         while (iter.next()) |fi| {
-                            log.err("'{s}', ", .{field_names[fi]});
+                            logErr("'{s}', ", .{field_names[fi]});
                         }
                         return error.MissingFields;
                     }
