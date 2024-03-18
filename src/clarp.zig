@@ -4,7 +4,7 @@
 
 const std = @import("std");
 const mem = std.mem;
-const log = std.log.scoped(.cli_parse);
+const log = std.log.scoped(.clarp);
 
 pub const Option = struct {
     alias: ?[]const u8 = null,
@@ -88,7 +88,7 @@ pub fn Parser(
             var cw = std.io.countingWriter(writer);
             const cwriter = cw.writer();
             try std.io.tty.detectConfig(f).setColor(f, .bright_red);
-            try cwriter.writeAll("error:");
+            try cwriter.writeAll("error");
             try std.io.tty.detectConfig(f).setColor(f, .reset);
             const err_pos = args.len - rest.len;
             try cwriter.print(" at argument {}: ", .{err_pos});

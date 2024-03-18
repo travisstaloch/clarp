@@ -4,13 +4,19 @@ Create command line parsers from zig struct, union, and enum declarations.
 
 # Features
 
-* customizable generated help/usage messages
+* help / usage
+  * automatically generated
+  * automatically printed on parsing errors
+  * customizable via options
+  * prints to stderr by default, supports any io.AnyWriter or print() method
+* colored diagnostics which point to errors
 * dump parsed results
+  * supports with any io.AnyWriter or print() method
 
 # Overview
-Union types create alternative commands.  Commands are field names.
+Union types create alternative commands.  Commands match field names.
 
-Struct types create sequences of options.  Options are field names with leading dashes such as `--text_color` for field `text_color`.  Named options can be parsed out of order.  An unnamed, positional argument will be assigned to the next unset field in field order.
+Struct types create sequences of options.  Options match field names with leading dashes such as `--text_color` for field `text_color`.  Named options can be parsed out of order.  Unnamed, positional arguments will be assigned to the next unset field in field order.
 
 Tuple types create unnamed sequences and are parsed strictly by position.
 
@@ -20,7 +26,7 @@ Bool field types create 'flags' and may be specified as `--flag` or `true`/`fals
 This package was developed against zig version 0.12.0-dev.3074+ae7f3fc36
 
 # Usage
-You can find these examples and more in the [tests](src/tests.zig).
+You can find examples and more in the [tests](src/tests.zig).
 
 ## Add clarp dependency
 ```zig
@@ -134,19 +140,24 @@ opt2: b
 #### Diagnostics
 ```console
 $ zig-out/bin/testexe --foo 'opt1 value'
-unknown option '--foo'
+error(clarp): unknown option '--foo'
 error at argument 1: --foo 'opt1 value'
                      ^~~~~
-# usage omitted
 ```
 
+![screenshot](https://github.com/travisstaloch/clarp/assets/1562827/37b50a56-2053-4c8e-93ef-52ff1b9d8ced)
+
 # Other features
-* allow users to manually parse arbitrary options by providing an `overrides` struct.  if any of its pub method names match an argument, that method will be called with an args pointer and optional user ctx pointer.  see test "parseWithUserCtx" in [tests](src/tests.zig).
+## Overrides
+users can manually parse options by providing an `overrides` struct.  if any of its pub method names match an argument, that method will be called with an args pointer and optional user ctx pointer.  see test "parseWithUserCtx" in [tests](src/tests.zig).
 
 # Todo
 - [ ] document commands
-- [ ] parse long names before aliases
+- [ ] validate aliases don't collide
 - [ ] add Option to auto create shorts
   - [ ] validate shorts and aliases don't collide
 - [ ] add colors to help output
 - [ ] support some 'end of sequence' marker, allow user to override
+- [ ] parse options
+  - [ ] add user_ctx to options, default null
+  - [ ] pass errwriter: io.AnyWriter to parse, default stderr
