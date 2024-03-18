@@ -40,9 +40,9 @@ const TestParser = clarp.Parser(union(enum) {
 
 const Root = std.meta.FieldType(TestParser, .root);
 fn expect(args: []const []const u8, expected: Root) !void {
-    const x = try TestParser.parse(args);
+    const x = try TestParser.parse(args, .{});
     // exercise dump() and printHelp() to catch compile errors
-    try TestParser.printHelp(Root, "", .{}, std.io.null_writer, 0);
+    try TestParser.printHelp(Root, "", .{}, std.io.null_writer.any(), 0);
     try TestParser.dump(x, "", .{}, std.io.null_writer, 0);
     try x.dump("", .{}, std.io.null_writer, 0);
     return testing.expectEqualDeep(expected, x.root);
@@ -50,13 +50,9 @@ fn expect(args: []const []const u8, expected: Root) !void {
 
 const testing = std.testing;
 test "Command" {
-    try testing.expectError(error.UnknownCommand, TestParser.parse(
-        &.{ "exe", "asfd" },
-    ));
-    try testing.expectError(error.ExtraArgs, TestParser.parse(
-        &.{ "exe", "decode", "1", "2", "3" },
-    ));
-    try testing.expectError(error.NotEnoughArgs, TestParser.parse(&.{"exe"}));
+    try testing.expectError(error.UnknownCommand, TestParser.parse(&.{ "exe", "asfd" }, .{}));
+    try testing.expectError(error.ExtraArgs, TestParser.parse(&.{ "exe", "decode", "1", "2", "3" }, .{}));
+    try testing.expectError(error.NotEnoughArgs, TestParser.parse(&.{"exe"}, .{}));
 
     try expect(&.{ "exe", "decode", "foo" }, .{ .decode = .{"foo"} });
     try expect(&.{ "exe", "info", "foo" }, .{ .info = .{ .filepath = "foo" } });
@@ -145,7 +141,7 @@ test "Command" {
         .{ .run = .{ .f = .b } },
     );
     {
-        const x = try TestParser.parse(&.{ "exe", "run", "arr", "foo" });
+        const x = try TestParser.parse(&.{ "exe", "run", "arr", "foo" }, .{});
         try testing.expectEqualStrings("foo", x.root.run.arr[0..3]);
     }
     try expect(&.{ "exe", "opt", "null" }, .{ .opt = null });
@@ -172,7 +168,7 @@ test "overrides" {
                 args.* = args.*[1..];
             }
         };
-    }, .{}).parseWithUserCtx(&.{ "exe", "--foo", "99", "--", "bar", "100" }, &ctx);
+    }, .{}).parse(&.{ "exe", "--foo", "99", "--", "bar", "100" }, .{ .user_ctx = &ctx });
 
     try testing.expectEqual(99, ctx.foo);
     try testing.expectEqual(100, ctx.bar);
@@ -191,7 +187,7 @@ const SimpleOptions = clarp.Parser(struct {
 }, .{ .usage_fmt = "\nUSAGE: $ {s} <options>...\n\noptions:" });
 
 test SimpleOptions {
-    const opts = try SimpleOptions.parse(&.{ "/path/to/exe", "--opt1", "foo" });
+    const opts = try SimpleOptions.parse(&.{ "/path/to/exe", "--opt1", "foo" }, .{});
     try testing.expectEqualDeep(
         SimpleOptions.Root{
             .opt1 = "foo",
@@ -208,10 +204,10 @@ pub fn main() !void {
     const allocator = arena.allocator();
 
     const args = try std.process.argsAlloc(allocator);
-    const opts = SimpleOptions.parse(args) catch |e| switch (e) {
+    const opts = SimpleOptions.parse(args, .{}) catch |e| switch (e) {
         error.HelpShown => return,
         else => {
-            SimpleOptions.help(args[0]);
+            SimpleOptions.help(args[0], .{});
             return e;
         },
     };

@@ -23,6 +23,15 @@ pub fn defaultPrintUsage(writer: anytype, comptime fmt: []const u8, exe_path: []
 }
 
 pub const UserParseFn = fn (args: *[]const []const u8, ctx: ?*anyopaque) void;
+
+pub const ParseOptions = struct {
+    user_ctx: ?*anyopaque = null,
+    err_writer: std.io.AnyWriter = std.io.getStdErr().writer().any(),
+};
+
+pub const HelpOptions = struct {
+    err_writer: std.io.AnyWriter = std.io.getStdErr().writer().any(),
+};
 ///
 /// union types describe alternatives.  their field names don't require any
 /// leading dashes and correspond to commands.
@@ -41,7 +50,7 @@ pub fn Parser(
         help_flags: type = HelpFlags,
         usage_fmt: []const u8 = default_usage_fmt,
         printUsage: fn (
-            writer: anytype,
+            writer: std.io.AnyWriter,
             comptime fmt: []const u8,
             exe_path: []const u8,
         ) void = defaultPrintUsage,
@@ -55,22 +64,17 @@ pub fn Parser(
         const Self = @This();
         pub const Root = T;
 
-        /// parse command line args without user_ctx
-        pub fn parse(args: []const []const u8) !Self {
-            return parseWithUserCtx(args, null);
-        }
-
-        /// parse command line args with user_ctx
-        pub fn parseWithUserCtx(args: []const []const u8, user_ctx: ?*anyopaque) !Self {
+        /// parse command line args
+        pub fn parse(args: []const []const u8, parse_options: ParseOptions) !Self {
             // log.debug("args[1] {s}", .{args[1]});
             var rest = args[1..];
             if (rest.len != 0) {
                 if (std.meta.stringToEnum(options.help_flags, rest[0])) |_| {
-                    help(args[0]);
+                    help(args[0], .{ .err_writer = parse_options.err_writer });
                     return error.HelpShown;
                 }
             }
-            const root = parsePayload(&rest, T, null, user_ctx) catch |e| {
+            const root = parsePayload(&rest, T, null, parse_options) catch |e| {
                 try printError(std.io.getStdErr(), args, rest);
                 return e;
             };
@@ -122,7 +126,7 @@ pub fn Parser(
             args: *[]const []const u8,
             comptime V: type,
             field_name: ?[]const u8,
-            ctx: ?*anyopaque,
+            parse_options: ParseOptions,
         ) !V {
             const info = @typeInfo(V);
             // structs and void
@@ -165,7 +169,7 @@ pub fn Parser(
                 .Optional => |x| if (mem.eql(u8, args.*[0], "null")) {
                     args.* = args.*[1..];
                     return null;
-                } else return try parsePayload(args, x.child, field_name, ctx),
+                } else return try parsePayload(args, x.child, field_name, parse_options),
                 .Enum => if (std.meta.stringToEnum(V, args.*[0])) |e| {
                     args.* = args.*[1..];
                     return e;
@@ -193,7 +197,7 @@ pub fn Parser(
                                 args,
                                 std.meta.TagPayload(V, t),
                                 tagname,
-                                ctx,
+                                parse_options,
                             ));
                         },
                     }
@@ -212,7 +216,7 @@ pub fn Parser(
                             inline for (comptime std.meta.declarations(V.overrides)) |decl| {
                                 if (mem.eql(u8, decl.name, args.*[0])) {
                                     const userParseFn: UserParseFn = @field(V.overrides, decl.name);
-                                    userParseFn(args, ctx);
+                                    userParseFn(args, parse_options.user_ctx);
                                     continue :args;
                                 }
                             }
@@ -227,7 +231,7 @@ pub fn Parser(
                                     log.debug("found alias {s} {s}", .{ args.*[0], sf.name });
                                     const Ft = @TypeOf(@field(payload, sf.name));
                                     args.* = args.*[@intFromBool(!isFlagType(Ft))..];
-                                    @field(payload, sf.name) = try parsePayload(args, Ft, alias, ctx);
+                                    @field(payload, sf.name) = try parsePayload(args, Ft, alias, parse_options);
                                     fields_seen.set(std.meta.fieldIndex(V, sf.name).?);
                                     continue :args;
                                 }
@@ -242,7 +246,7 @@ pub fn Parser(
                                 if (mem.eql(u8, args.*[0][2..], fname)) {
                                     log.debug("found long {s} {s}", .{ args.*[0], fname });
                                     args.* = args.*[@intFromBool(!isFlagType(f.type))..];
-                                    @field(payload, f.name) = try parsePayload(args, f.type, "--" ++ fname, ctx);
+                                    @field(payload, f.name) = try parsePayload(args, f.type, "--" ++ fname, parse_options);
                                     fields_seen.set(std.meta.fieldIndex(V, f.name).?);
                                     continue :args;
                                 }
@@ -261,7 +265,7 @@ pub fn Parser(
                         };
                         inline for (x.fields, 0..) |f, fi| {
                             if (fi == next_fieldi) {
-                                @field(payload, f.name) = try parsePayload(args, f.type, f.name, ctx);
+                                @field(payload, f.name) = try parsePayload(args, f.type, f.name, parse_options);
                                 fields_seen.set(fi);
                                 continue :args;
                             }
@@ -299,6 +303,8 @@ pub fn Parser(
             }
         }
 
+        /// when `fmt` is "help", calls help()
+        /// when `fmt` is empty, calls dump()
         pub fn format(
             self: Self,
             comptime fmt: []const u8,
@@ -308,7 +314,7 @@ pub fn Parser(
             if (fmt.len == 0)
                 try dump(self.root, fmt, fmt_opts, writer, 0)
             else if (comptime mem.eql(u8, fmt, "help")) {
-                help(self.exe_path);
+                help(self.exe_path, .{ .err_writer = writer });
             } else @compileError("unknown fmt '" ++ fmt ++ "'");
         }
 
@@ -354,8 +360,8 @@ pub fn Parser(
             }
         }
 
-        pub fn help(exe_path: []const u8) void {
-            const writer = std.io.getStdErr().writer();
+        pub fn help(exe_path: []const u8, help_options: HelpOptions) void {
+            const writer = help_options.err_writer;
             options.printUsage(writer, options.usage_fmt, std.fs.path.basename(exe_path));
             writer.writeAll("\n  ") catch unreachable;
             inline for (@typeInfo(options.help_flags).Enum.fields, 0..) |f, i| {
@@ -371,7 +377,7 @@ pub fn Parser(
             comptime V: type,
             comptime fmt: []const u8,
             fmt_opts: std.fmt.FormatOptions,
-            writer: anytype,
+            writer: std.io.AnyWriter,
             depth: u8,
         ) !void {
             switch (@typeInfo(V)) {
