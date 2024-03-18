@@ -125,10 +125,6 @@ pub fn Parser(
             try writer.writeAll("\n");
         }
 
-        fn isFlagType(comptime U: type) bool {
-            return U == bool;
-        }
-
         pub fn parsePayload(
             args: *[]const []const u8,
             comptime V: type,
@@ -136,10 +132,13 @@ pub fn Parser(
             parse_options: ParseOptions,
         ) !V {
             const info = @typeInfo(V);
-            // structs and void
-            if (info != .Void and info != .Struct and args.len == 0)
-                return error.NotEnoughArgs;
-            // log.debug("{s} {s}", .{ args.*, @typeName(V) });
+            if (args.len == 0) {
+                return if (mustConsume(V))
+                    error.NotEnoughArgs
+                else
+                    initEmpty(V) catch error.NotEnoughArgs;
+            }
+
             switch (info) {
                 else => |x| if (comptime isZigString(V)) {
                     defer args.* = args.*[1..];
@@ -451,6 +450,76 @@ pub fn Parser(
             }
         }
     };
+}
+
+fn isFlagType(comptime U: type) bool {
+    return U == bool;
+}
+
+// return true if `U` must consume 1 or more args.
+// return false if `U` may consume 0 args.
+inline fn mustConsume(comptime U: type) bool {
+    comptime {
+        const info = @typeInfo(U);
+        const result = switch (info) {
+            .Void, .Bool => false,
+            // structs are mustConsume if any fields are mustConsume
+            .Struct => |x| for (x.fields) |f| {
+                if (mustConsume(f.type) and
+                    f.default_value == null)
+                    break true;
+            } else false,
+            .Union => true,
+            .Enum, .Int, .Float => true,
+            .Optional => |x| mustConsume(x.child),
+            .Pointer => |x| mustConsume(x.child),
+            .Array => |x| x.len != 0,
+            else => |x| @compileError("TODO " ++ @tagName(x)),
+        };
+        return result;
+    }
+}
+
+fn initEmpty(comptime V: type) !V {
+    const info = @typeInfo(V);
+    return switch (info) {
+        .Bool => false,
+        .Void => {},
+        .Pointer => |x| switch (x.size) {
+            .Slice => return &.{},
+            else => std.debug.panic("TODO {s} {s}", .{ @tagName(x), @typeName(V) }),
+        },
+        .Union => error.CantInitEmptyUnion,
+        .Struct => |x| {
+            var v: V = undefined;
+            inline for (x.fields) |f| {
+                if (f.default_value) |dv|
+                    @field(v, f.name) = @as(*const f.type, @ptrCast(@alignCast(dv))).*
+                else
+                    @field(v, f.name) = try initEmpty(f.type);
+            }
+            return v;
+        },
+        else => |x| std.debug.panic("TODO {s} {s}", .{ @tagName(x), @typeName(V) }),
+    };
+}
+
+test mustConsume {
+    try std.testing.expect(mustConsume(struct {
+        a: void,
+        b: u8,
+    }));
+    try std.testing.expect(!mustConsume(struct {
+        a: void,
+        b: u8 = 0,
+    }));
+    try std.testing.expect(mustConsume(union(enum) {
+        a: u8,
+    }));
+    try std.testing.expect(!mustConsume(union(enum) {
+        a: u8,
+        b,
+    }));
 }
 
 pub fn isZigString(comptime T: type) bool {

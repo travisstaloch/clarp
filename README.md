@@ -8,7 +8,7 @@ Create command line parsers from zig struct, union, and enum declarations.
   * automatically generated
   * automatically printed on parsing errors
   * customizable via options
-  * writes to parse_options.err_writer (default stderr)
+  * writes to `parse_options.err_writer` (default stderr)
   * from any print() method: `std.debug.print("{help}", .{parse_result});`
 * colored diagnostics which point to errors
 * dump parsed results
