@@ -1,9 +1,12 @@
 # About
 
-Create command line parsers from zig struct, union, and enum declarations.
+Create command line parsers from zig unions and structs.
 
 # Features
 
+* field types
+  * int, bool, enum, float, optional, array
+  * nested unions and structs
 * help / usage
   * automatically generated
   * automatically printed on parsing errors
@@ -13,9 +16,10 @@ Create command line parsers from zig struct, union, and enum declarations.
 * colored diagnostics which point to errors
 * dump parsed results
   * from any print() method: `std.debug.print("{}", .{parse_result});`
+* derive short names
 
 # Overview
-Union types create alternative commands.  Commands match field names.
+Union types create alternative commands.  Commands exact match field names.
 
 Struct types create sequences of options.  Options match field names with leading dashes such as `--text_color` for field `text_color`.  Named options can be parsed out of order.  Unnamed, positional arguments will be assigned to the next unset field in field order.
 
@@ -87,7 +91,7 @@ options:
 
 Notice how this message is derived from the struct above and that its `options` declaration affects the output, adding the `-o1` alias and description.
 
-### Options
+### Parser Options
 second argument to `clarp.Parser()`
 #### help_flags: type (enum)
 ```zig
@@ -150,15 +154,16 @@ error at argument 1: --foo 'opt1 value'
 
 # Other features
 ## Overrides
-users can manually parse options by providing an `overrides` struct.  if any of its pub method names match an argument, that method will be called with an args pointer and optional user ctx pointer.  see test "overrides" in [tests](src/tests.zig).
+Users can manually parse options by providing an `overrides` struct.  If any of its pub method names match an argument, that method will be called with an args pointer and optional user ctx pointer.  See test "overrides" in [tests](src/tests.zig).
 
 # Todo
 - [ ] document commands
 - [ ] validate aliases don't collide
-- [ ] add Option to auto create shorts
+- [x] add Option to derive shorts
   - [ ] validate shorts and aliases don't collide
 - [ ] add colors to help output
 - [ ] support some 'end of sequence' marker, allow user to override
 - [x] parse options
   - [x] add user_ctx to options, default null
   - [x] pass errwriter: io.AnyWriter to parse, default stderr
+- [ ] option to use kebab case
