@@ -190,23 +190,24 @@ pub fn Parser(
                     @memcpy(a[0..args.*[0].len], args.*[0]);
                     return a;
                 },
-                .Union => {
-                    const tag = std.meta.stringToEnum(std.meta.Tag(V), args.*[0]) orelse {
-                        logErr("unknown command '{s}'", .{args.*[0]});
-                        return error.UnknownCommand;
-                    };
-                    args.* = args.*[1..];
-                    switch (tag) {
-                        inline else => |t| {
-                            const tagname = comptime std.fmt.comptimePrint("{s}", .{@tagName(t)});
-                            return @unionInit(V, @tagName(t), try parsePayload(
+                .Union => |x| {
+                    const Shorts = ShortNames(x.fields);
+                    inline for (x.fields, @typeInfo(Shorts).Enum.fields) |uf, sf| {
+                        if (mem.eql(u8, sf.name, args.*[0]) or
+                            mem.eql(u8, uf.name, args.*[0]))
+                        {
+                            args.* = args.*[1..];
+                            return @unionInit(V, uf.name, try parsePayload(
                                 args,
-                                std.meta.TagPayload(V, t),
-                                tagname,
+                                uf.type,
+                                uf.name,
                                 parse_options,
                             ));
-                        },
+                        }
                     }
+
+                    logErr("unknown command '{s}'", .{args.*[0]});
+                    return error.UnknownCommand;
                 },
                 .Struct => |x| {
                     var payload: V = mem.zeroInit(V, .{});
@@ -228,42 +229,64 @@ pub fn Parser(
                             }
                         }
 
-                        // look for alias names
-                        if (@hasDecl(V, "options")) {
-                            inline for (@typeInfo(@TypeOf(V.options)).Struct.fields) |sf| {
-                                const opt: Option = @field(V.options, sf.name);
-                                const alias = opt.alias orelse continue;
-                                if (mem.eql(u8, args.*[0], alias)) {
-                                    log.debug("found alias {s} {s}", .{ args.*[0], sf.name });
-                                    const Ft = @TypeOf(@field(payload, sf.name));
+                        // look for derived short names
+                        if (@hasDecl(V, "derive_short_names") and
+                            V.derive_short_names and
+                            mem.startsWith(u8, args.*[0], "-"))
+                        {
+                            const vfields = @typeInfo(V).Struct.fields;
+                            const Shorts = ShortNames(vfields);
+                            inline for (@typeInfo(Shorts).Enum.fields, 0..) |f, fi| {
+                                if (mem.eql(u8, args.*[0][1..], f.name)) {
+                                    log.debug("found derived short name {s} {s}", .{ args.*[0], f.name });
+                                    const Ft = @TypeOf(@field(payload, vfields[fi].name));
                                     args.* = args.*[@intFromBool(!isFlagType(Ft))..];
-                                    @field(payload, sf.name) = try parsePayload(args, Ft, alias, parse_options);
-                                    fields_seen.set(std.meta.fieldIndex(V, sf.name).?);
+                                    @field(payload, vfields[fi].name) =
+                                        try parsePayload(args, Ft, vfields[fi].name, parse_options);
+                                    fields_seen.set(fi);
                                     continue :args;
                                 }
                             }
                         }
 
+                        // look for alias names
+                        if (@hasDecl(V, "options")) {
+                            inline for (@typeInfo(@TypeOf(V.options)).Struct.fields, 0..) |f, fi| {
+                                const opt: Option = @field(V.options, f.name);
+                                const alias = opt.alias orelse continue;
+                                if (mem.eql(u8, args.*[0], alias)) {
+                                    log.debug("found alias {s} {s}", .{ args.*[0], f.name });
+                                    const Ft = @TypeOf(@field(payload, f.name));
+                                    args.* = args.*[@intFromBool(!isFlagType(Ft))..];
+                                    @field(payload, f.name) =
+                                        try parsePayload(args, Ft, alias, parse_options);
+                                    fields_seen.set(fi);
+                                    continue :args;
+                                }
+                            }
+                        }
+
+                        // look for long names
                         log.debug("arg {s}", .{args.*[0]});
                         const is_long = mem.startsWith(u8, args.*[0], "--");
                         if (is_long) {
-                            inline for (x.fields) |f| {
+                            inline for (x.fields, 0..) |f, fi| {
                                 const fname = comptime std.fmt.comptimePrint("{s}", .{f.name});
                                 if (mem.eql(u8, args.*[0][2..], fname)) {
                                     log.debug("found long {s} {s}", .{ args.*[0], fname });
                                     args.* = args.*[@intFromBool(!isFlagType(f.type))..];
                                     @field(payload, f.name) = try parsePayload(args, f.type, "--" ++ fname, parse_options);
-                                    fields_seen.set(std.meta.fieldIndex(V, f.name).?);
+                                    fields_seen.set(fi);
                                     continue :args;
                                 }
                             }
-                            // error if positional start with '--'
+                            // error if positional starts with '--'
                             logErr("unknown option '{s}'", .{args.*[0]});
                             return error.UnknownOption;
                         }
 
-                        log.debug("parsing positional. fields seen {} arg {s}", .{ fields_seen.count(), args.*[0] });
                         // positionals
+                        log.debug("parsing positional. fields seen {} arg {s}", .{ fields_seen.count(), args.*[0] });
                         var iter = fields_seen.iterator(.{ .kind = .unset });
                         const next_fieldi = iter.next() orelse {
                             logErr("extra args {s}", .{args.*});
@@ -406,10 +429,11 @@ pub fn Parser(
                     .{ x.len, @typeName(x.child) },
                 ),
                 .Optional => |x| try writer.print(": ?{s}", .{@typeName(x.child)}),
-                .Struct => |x| inline for (x.fields) |f| {
+                .Struct => |x| inline for (x.fields, 0..) |f, fi| {
                     try writer.writeByte('\n');
                     try writer.writeByteNTimes(' ', depth * 2);
                     if (!x.is_tuple) try writer.print("--{s}", .{f.name});
+                    try printShort(V, x.fields, writer, fi);
                     try printAlias(V, writer, f);
                     try printHelp(f.type, fmt, fmt_opts, writer, depth + 1);
                     if (f.default_value) |d| {
@@ -425,10 +449,11 @@ pub fn Parser(
                     }
                     try printDesc(V, writer, f);
                 },
-                .Union => |x| inline for (x.fields) |f| {
+                .Union => |x| inline for (x.fields, 0..) |f, fi| {
                     try writer.writeByte('\n');
                     try writer.writeByteNTimes(' ', depth * 2);
                     try writer.print("{s}", .{f.name});
+                    try printShort(V, x.fields, writer, fi);
                     try printAlias(V, writer, f);
                     try printHelp(f.type, fmt, fmt_opts, writer, depth + 1);
                     try printDesc(V, writer, f);
@@ -443,6 +468,18 @@ pub fn Parser(
             }
         }
 
+        fn printShort(comptime V: type, vfields: anytype, writer: anytype, comptime fieldi: usize) !void {
+            if (@hasDecl(V, "derive_short_names") and V.derive_short_names) {
+                const alias = @typeInfo(ShortNames(vfields)).Enum.fields[fieldi];
+                const info = @typeInfo(V);
+                switch (info) {
+                    .Struct => try writer.print(" -{s}", .{alias.name}),
+                    .Union => try writer.print(" {s}", .{alias.name}),
+                    else => unreachable,
+                }
+            }
+        }
+
         fn printDesc(comptime V: type, writer: anytype, field: anytype) !void {
             if (@hasDecl(V, "options")) {
                 const opt: Option = @field(V.options, field.name);
@@ -450,6 +487,36 @@ pub fn Parser(
             }
         }
     };
+}
+
+/// returns an enum of shortest possible distinct field names
+fn ShortNames(vfields: anytype) type {
+    var fields: [vfields.len]std.builtin.Type.EnumField = undefined;
+    for (vfields, 0..) |sf, i| {
+        var preflen: usize = 1;
+        // search previous fields. if duplicate field name found, increase len
+
+        const name = while (preflen <= sf.name.len) : (preflen += 1) {
+            const name: []const u8 = sf.name[0..preflen];
+            const found = for (0..i) |j| {
+                if (mem.eql(u8, fields[j].name, name)) {
+                    break true;
+                }
+            } else false;
+            if (!found) break name;
+        };
+        fields[i] = .{
+            .name = (name[0..name.len].* ++ [1]u8{0})[0..name.len :0],
+            .value = i,
+        };
+    }
+
+    return @Type(.{ .Enum = .{
+        .fields = &fields,
+        .tag_type = std.math.IntFittingRange(0, vfields.len),
+        .decls = &.{},
+        .is_exhaustive = true,
+    } });
 }
 
 fn isFlagType(comptime U: type) bool {
