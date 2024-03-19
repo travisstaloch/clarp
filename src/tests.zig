@@ -38,16 +38,24 @@ const TestParser = clarp.Parser(union(enum) {
     const Filepath = struct { filepath: []const u8 };
 }, .{});
 
-const Root = std.meta.FieldType(TestParser, .root);
-fn expect(args: []const []const u8, expected: Root) !void {
-    const x = try TestParser.parse(args, .{});
-    // exercise dump() and printHelp() to catch compile errors
-    try TestParser.printHelp(Root, "", .{}, std.io.null_writer.any(), 0);
-    try TestParser.dump(x, "", .{}, std.io.null_writer, 0);
-    try x.dump("", .{}, std.io.null_writer, 0);
-    try std.io.null_writer.print("{help}", .{x});
-    try std.io.null_writer.print("{}", .{x});
-    return testing.expectEqualDeep(expected, x.root);
+fn ExpectFn(comptime P: type) type {
+    return fn (args: []const []const u8, expected: std.meta.FieldType(P, .root)) anyerror!void;
+}
+
+fn expectFn(comptime P: type) ExpectFn(P) {
+    return struct {
+        fn func(args: []const []const u8, expected: std.meta.FieldType(P, .root)) anyerror!void {
+            const x = try P.parse(args, .{});
+            // exercise dump() and printHelp() to catch compile errors
+            const Root = std.meta.FieldType(P, .root);
+            try P.printHelp(Root, "", .{}, std.io.null_writer.any(), 0);
+            try P.dump(x, "", .{}, std.io.null_writer, 0);
+            try x.dump("", .{}, std.io.null_writer, 0);
+            try std.io.null_writer.print("{help}", .{x});
+            try std.io.null_writer.print("{}", .{x});
+            return testing.expectEqualDeep(expected, x.root);
+        }
+    }.func;
 }
 
 const testing = std.testing;
@@ -55,6 +63,8 @@ test "Command" {
     try testing.expectError(error.UnknownCommand, TestParser.parse(&.{ "exe", "asfd" }, .{}));
     try testing.expectError(error.ExtraArgs, TestParser.parse(&.{ "exe", "decode", "1", "2", "3" }, .{}));
     try testing.expectError(error.NotEnoughArgs, TestParser.parse(&.{"exe"}, .{}));
+
+    const expect = expectFn(TestParser);
 
     try expect(&.{ "exe", "decode", "foo" }, .{ .decode = .{"foo"} });
     try expect(&.{ "exe", "info", "foo" }, .{ .info = .{ .filepath = "foo" } });
@@ -150,8 +160,8 @@ test "Command" {
     try expect(&.{ "exe", "opt", "foo" }, .{ .opt = "foo" });
 }
 
-const Ctx = struct { foo: u8 = 0, bar: u8 = 0 };
 test "overrides" {
+    const Ctx = struct { foo: u8 = 0, bar: u8 = 0 };
     var ctx = Ctx{};
     _ = try clarp.Parser(struct {
         pub const overrides = struct {
@@ -189,13 +199,10 @@ const SimpleOptions = clarp.Parser(struct {
 }, .{ .usage_fmt = "\nUSAGE: $ {s} <options>...\n\noptions:" });
 
 test SimpleOptions {
-    const opts = try SimpleOptions.parse(&.{ "/path/to/exe", "--opt1", "foo" }, .{});
-    try testing.expectEqualDeep(
-        SimpleOptions.Root{
-            .opt1 = "foo",
-            .opt2 = .a,
-        },
-        opts.root,
+    const expect = expectFn(SimpleOptions);
+    try expect(
+        &.{ "/path/to/exe", "--opt1", "foo" },
+        .{ .opt1 = "foo", .opt2 = .a },
     );
 }
 
@@ -214,4 +221,36 @@ pub fn main() !void {
         },
     };
     std.debug.print("{}\n", .{opts});
+}
+
+test "derive_short_names struct" {
+    const P = clarp.Parser(struct {
+        xxx: u8,
+        xyy: u8,
+        xxy: u8,
+        yyy: u8,
+
+        pub const derive_short_names = true;
+    }, .{});
+    const expect = expectFn(P);
+    try expect(
+        &.{ "/path/to/exe", "-y", "4", "-x", "1", "-xy", "2", "-xx", "3" },
+        .{ .xxx = 1, .xyy = 2, .xxy = 3, .yyy = 4 },
+    );
+}
+
+test "derive_short_names union" {
+    const P = clarp.Parser(union(enum) {
+        xxx: u8,
+        xyy: u8,
+        xxy: u8,
+        yyy: u8,
+
+        pub const derive_short_names = true;
+    }, .{});
+    const expect = expectFn(P);
+    try expect(&.{ "/path/to/exe", "x", "1" }, .{ .xxx = 1 });
+    try expect(&.{ "/path/to/exe", "xy", "2" }, .{ .xyy = 2 });
+    try expect(&.{ "/path/to/exe", "xx", "3" }, .{ .xxy = 3 });
+    try expect(&.{ "/path/to/exe", "y", "4" }, .{ .yyy = 4 });
 }
