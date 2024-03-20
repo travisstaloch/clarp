@@ -19,7 +19,7 @@ Create command line parsers from zig unions and structs.
 * derive short names
 
 # Overview
-Union types create alternative commands.  Commands exact match field names.
+Union types create alternative commands.  Commands match field names exactly.
 
 Struct types create sequences of options.  Options match field names with leading dashes such as `--text_color` for field `text_color`.  Named options can be parsed out of order.  Unnamed, positional arguments will be assigned to the next unset field in field order.
 
@@ -31,7 +31,7 @@ Bool field types create 'flags' and may be specified as `--flag` or `true`/`fals
 This package was developed against zig version 0.12.0-dev.3343+294f51814
 
 # Usage
-You can find examples and more in the [tests](src/tests.zig).
+You can find many examples in [tests](src/tests.zig).
 
 ## Add clarp dependency
 ```zig
@@ -162,8 +162,10 @@ Users can manually parse options by providing an `overrides` struct.  If any of 
 - [x] add Option to derive shorts
   - [ ] validate shorts and aliases don't collide
 - [ ] add colors to help output
-- [ ] support some 'end of sequence' marker, allow user to override
+- [x] support 'end of sequence' marker. default '--end-field_name'
+  - [x] allow user to override via struct `pub const end_mark = "--foo"`
 - [x] parse options
   - [x] add user_ctx to options, default null
   - [x] pass errwriter: io.AnyWriter to parse, default stderr
 - [ ] option to use kebab case
+- [ ] allow overrides to mutate `seen_fields` by passing to `UserParseFn`

@@ -163,16 +163,14 @@ test "Command" {
 test "overrides" {
     const Ctx = struct { foo: u8 = 0, bar: u8 = 0 };
     var ctx = Ctx{};
-    _ = try clarp.Parser(struct {
+    const P = clarp.Parser(struct {
         pub const overrides = struct {
             pub fn @"--foo"(args: *[]const []const u8, user_ctx: ?*anyopaque) void {
-                args.* = args.*[1..];
                 @as(*Ctx, @ptrCast(user_ctx)).foo =
                     std.fmt.parseInt(u8, args.*[0], 10) catch unreachable;
                 args.* = args.*[1..];
             }
             pub fn @"--"(args: *[]const []const u8, user_ctx: ?*anyopaque) void {
-                args.* = args.*[1..];
                 testing.expectEqualStrings("bar", args.*[0]) catch unreachable;
                 args.* = args.*[1..];
                 @as(*Ctx, @ptrCast(user_ctx)).bar =
@@ -180,7 +178,9 @@ test "overrides" {
                 args.* = args.*[1..];
             }
         };
-    }, .{}).parse(&.{ "exe", "--foo", "99", "--", "bar", "100" }, .{ .user_ctx = &ctx });
+    }, .{});
+
+    _ = try P.parse(&.{ "exe", "--foo", "99", "--", "bar", "100" }, .{ .user_ctx = &ctx });
 
     try testing.expectEqual(99, ctx.foo);
     try testing.expectEqual(100, ctx.bar);
@@ -197,11 +197,11 @@ const SimpleOptions = clarp.Parser(struct {
         },
     };
 }, .{ .usage_fmt = "\nUSAGE: $ {s} <options>...\n\noptions:" });
-
+const exe_path = "/path/to/exe";
 test SimpleOptions {
     const expect = expectFn(SimpleOptions);
     try expect(
-        &.{ "/path/to/exe", "--opt1", "foo" },
+        &.{ exe_path, "--opt1", "foo" },
         .{ .opt1 = "foo", .opt2 = .a },
     );
 }
@@ -234,7 +234,7 @@ test "derive_short_names struct" {
     }, .{});
     const expect = expectFn(P);
     try expect(
-        &.{ "/path/to/exe", "-y", "4", "-x", "1", "-xy", "2", "-xx", "3" },
+        &.{ exe_path, "-y", "4", "-x", "1", "-xy", "2", "-xx", "3" },
         .{ .xxx = 1, .xyy = 2, .xxy = 3, .yyy = 4 },
     );
 }
@@ -249,8 +249,25 @@ test "derive_short_names union" {
         pub const derive_short_names = true;
     }, .{});
     const expect = expectFn(P);
-    try expect(&.{ "/path/to/exe", "x", "1" }, .{ .xxx = 1 });
-    try expect(&.{ "/path/to/exe", "xy", "2" }, .{ .xyy = 2 });
-    try expect(&.{ "/path/to/exe", "xx", "3" }, .{ .xxy = 3 });
-    try expect(&.{ "/path/to/exe", "y", "4" }, .{ .yyy = 4 });
+    try expect(&.{ exe_path, "x", "1" }, .{ .xxx = 1 });
+    try expect(&.{ exe_path, "xy", "2" }, .{ .xyy = 2 });
+    try expect(&.{ exe_path, "xx", "3" }, .{ .xxy = 3 });
+    try expect(&.{ exe_path, "y", "4" }, .{ .yyy = 4 });
+}
+
+test "struct end mark" {
+    const P = clarp.Parser(struct {
+        a: struct {
+            b: u8 = 1,
+            pub const end_mark = "--my-end-a-mark";
+        } = .{},
+        b: u8 = 2,
+    }, .{});
+    const expect = expectFn(P);
+    try expect(
+        &.{ exe_path, "--a", "--b", "20", "--b", "30" },
+        .{ .a = .{ .b = 20 }, .b = 30 },
+    );
+    try expect(&.{ exe_path, "--a", "--end-a", "--b", "20" }, .{ .b = 20 });
+    try expect(&.{ exe_path, "--a", "--my-end-a-mark", "--b", "20" }, .{ .b = 20 });
 }

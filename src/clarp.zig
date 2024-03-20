@@ -84,12 +84,10 @@ pub fn Parser(
                 try printError(std.io.getStdErr(), args, rest);
                 return e;
             };
-            const self = Self{
-                .root = root,
-                .exe_path = args[0],
-            };
-            if (rest.len != 0) return error.ExtraArgs;
-            return self;
+            return if (rest.len != 0)
+                error.ExtraArgs
+            else
+                .{ .root = root, .exe_path = args[0] };
         }
 
         fn printError(f: std.fs.File, args: []const []const u8, rest: []const []const u8) !void {
@@ -132,6 +130,14 @@ pub fn Parser(
             parse_options: ParseOptions,
         ) !V {
             const info = @typeInfo(V);
+            log.debug(
+                "parsing {s} args len {} field name {?s}",
+                .{ @tagName(info), args.len, field_name },
+            );
+            defer log.debug(
+                "parsing {s} done args len {} field name {?s}",
+                .{ @tagName(info), args.len, field_name },
+            );
             if (args.len == 0) {
                 return if (mustConsume(V))
                     error.NotEnoughArgs
@@ -156,7 +162,9 @@ pub fn Parser(
                 .Bool => {
                     log.debug("bool {s}", .{args.*[0]});
                     if (field_name) |n| {
-                        if (mem.eql(u8, args.*[0], n)) {
+                        if (mem.startsWith(u8, args.*[0], "--") and
+                            mem.eql(u8, args.*[0][2..], n))
+                        {
                             args.* = args.*[1..];
                             return true;
                         }
@@ -213,15 +221,29 @@ pub fn Parser(
                     var payload: V = mem.zeroInit(V, .{});
                     var fields_seen = std.StaticBitSet(x.fields.len).initEmpty();
 
-                    args: while (args.len > 0) {
+                    args: while (args.len > 0 and
+                        (fields_seen.count() < x.fields.len or
+                        @hasDecl(V, "overrides")))
+                    {
                         inline for (x.fields, 0..) |f, i| {
                             if (fields_seen.isSet(i))
                                 log.debug("{s}: {any}", .{ f.name, @field(payload, f.name) });
                         }
 
+                        if (field_name != null and
+                            (@hasDecl(V, "end_mark") and
+                            mem.eql(u8, args.*[0], V.end_mark)) or
+                            (mem.startsWith(u8, args.*[0], "--end-") and
+                            mem.eql(u8, args.*[0][6..], field_name.?)))
+                        {
+                            args.* = args.*[1..];
+                            return payload;
+                        }
+
                         if (@hasDecl(V, "overrides")) {
                             inline for (comptime std.meta.declarations(V.overrides)) |decl| {
                                 if (mem.eql(u8, decl.name, args.*[0])) {
+                                    args.* = args.*[1..];
                                     const userParseFn: UserParseFn = @field(V.overrides, decl.name);
                                     userParseFn(args, parse_options.user_ctx);
                                     continue :args;
@@ -275,7 +297,7 @@ pub fn Parser(
                                 if (mem.eql(u8, args.*[0][2..], fname)) {
                                     log.debug("found long {s} {s}", .{ args.*[0], fname });
                                     args.* = args.*[@intFromBool(!isFlagType(f.type))..];
-                                    @field(payload, f.name) = try parsePayload(args, f.type, "--" ++ fname, parse_options);
+                                    @field(payload, f.name) = try parsePayload(args, f.type, fname, parse_options);
                                     fields_seen.set(fi);
                                     continue :args;
                                 }
