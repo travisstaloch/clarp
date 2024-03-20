@@ -38,6 +38,19 @@ fn logErr(comptime fmt: anytype, args: anytype) void {
     if (@import("builtin").is_test) return;
     log.err(fmt, args);
 }
+
+const CaseFn = @TypeOf(caseSame);
+fn caseSame(_: []u8, name: []const u8) []const u8 {
+    return name;
+}
+
+pub fn caseKebab(buf: []u8, name: []const u8) []const u8 {
+    for (0..name.len) |i|
+        buf[i] = if (name[i] == '_') '-' else name[i];
+
+    return buf[0..name.len];
+}
+
 ///
 /// union types describe alternatives.  their field names don't require any
 /// leading dashes and correspond to commands.
@@ -60,6 +73,7 @@ pub fn Parser(
             comptime fmt: []const u8,
             exe_path: []const u8,
         ) void = defaultPrintUsage,
+        caseFn: CaseFn = caseSame,
     },
 ) type {
     return struct {
@@ -200,9 +214,13 @@ pub fn Parser(
                 },
                 .Union => |x| {
                     const Shorts = ShortNames(x.fields);
+                    comptime var buflen: u16 = 0;
+                    inline for (x.fields) |f| buflen = @max(buflen, f.name.len);
+                    comptime var buf: [buflen]u8 = undefined;
                     inline for (x.fields, @typeInfo(Shorts).Enum.fields) |uf, sf| {
+                        const tagname = comptime options.caseFn(&buf, uf.name);
                         if (mem.eql(u8, sf.name, args.*[0]) or
-                            mem.eql(u8, uf.name, args.*[0]))
+                            mem.eql(u8, tagname, args.*[0]))
                         {
                             args.* = args.*[1..];
                             return @unionInit(V, uf.name, try parsePayload(
@@ -292,8 +310,11 @@ pub fn Parser(
                         log.debug("arg {s}", .{args.*[0]});
                         const is_long = mem.startsWith(u8, args.*[0], "--");
                         if (is_long) {
+                            comptime var buflen: u16 = 0;
+                            inline for (x.fields) |f| buflen = @max(buflen, f.name.len);
+                            comptime var buf: [buflen]u8 = undefined;
                             inline for (x.fields, 0..) |f, fi| {
-                                const fname = comptime std.fmt.comptimePrint("{s}", .{f.name});
+                                const fname = comptime options.caseFn(&buf, f.name);
                                 if (mem.eql(u8, args.*[0][2..], fname)) {
                                     log.debug("found long {s} {s}", .{ args.*[0], fname });
                                     args.* = args.*[@intFromBool(!isFlagType(f.type))..];
@@ -451,34 +472,47 @@ pub fn Parser(
                     .{ x.len, @typeName(x.child) },
                 ),
                 .Optional => |x| try writer.print(": ?{s}", .{@typeName(x.child)}),
-                .Struct => |x| inline for (x.fields, 0..) |f, fi| {
-                    try writer.writeByte('\n');
-                    try writer.writeByteNTimes(' ', depth * 2);
-                    if (!x.is_tuple) try writer.print("--{s}", .{f.name});
-                    try printShort(V, x.fields, writer, fi);
-                    try printAlias(V, writer, f);
-                    try printHelp(f.type, fmt, fmt_opts, writer, depth + 1);
-                    if (f.default_value) |d| {
-                        const dv = @as(*const f.type, @ptrCast(@alignCast(d))).*;
-                        switch (@typeInfo(f.type)) {
-                            else => if (comptime isZigString(f.type))
-                                try writer.print(" = \"{s}\"", .{dv})
-                            else
-                                try writer.print(" = {}", .{dv}),
-                            .Enum => try writer.print(" = {s}", .{@tagName(dv)}),
-                            .Bool => if (dv) try writer.writeAll(" = true"),
+                .Struct => |x| {
+                    comptime var buflen: u16 = 0;
+                    inline for (x.fields) |f| buflen = @max(buflen, f.name.len);
+                    comptime var buf: [buflen]u8 = undefined;
+                    inline for (x.fields, 0..) |f, fi| {
+                        try writer.writeByte('\n');
+                        try writer.writeByteNTimes(' ', depth * 2);
+                        if (!x.is_tuple) {
+                            try writer.writeAll("--");
+                            try writer.writeAll(comptime options.caseFn(&buf, f.name));
                         }
+                        try printShort(V, x.fields, writer, fi);
+                        try printAlias(V, writer, f);
+                        try printHelp(f.type, fmt, fmt_opts, writer, depth + 1);
+                        if (f.default_value) |d| {
+                            const dv = @as(*const f.type, @ptrCast(@alignCast(d))).*;
+                            switch (@typeInfo(f.type)) {
+                                else => if (comptime isZigString(f.type))
+                                    try writer.print(" = \"{s}\"", .{dv})
+                                else
+                                    try writer.print(" = {}", .{dv}),
+                                .Enum => try writer.print(" = {s}", .{@tagName(dv)}),
+                                .Bool => if (dv) try writer.writeAll(" = true"),
+                            }
+                        }
+                        try printDesc(V, writer, f);
                     }
-                    try printDesc(V, writer, f);
                 },
-                .Union => |x| inline for (x.fields, 0..) |f, fi| {
-                    try writer.writeByte('\n');
-                    try writer.writeByteNTimes(' ', depth * 2);
-                    try writer.print("{s}", .{f.name});
-                    try printShort(V, x.fields, writer, fi);
-                    try printAlias(V, writer, f);
-                    try printHelp(f.type, fmt, fmt_opts, writer, depth + 1);
-                    try printDesc(V, writer, f);
+                .Union => |x| {
+                    comptime var buflen: u16 = 0;
+                    inline for (x.fields) |f| buflen = @max(buflen, f.name.len);
+                    comptime var buf: [buflen]u8 = undefined;
+                    inline for (x.fields, 0..) |f, fi| {
+                        try writer.writeByte('\n');
+                        try writer.writeByteNTimes(' ', depth * 2);
+                        try writer.writeAll(comptime options.caseFn(&buf, f.name));
+                        try printShort(V, x.fields, writer, fi);
+                        try printAlias(V, writer, f);
+                        try printHelp(f.type, fmt, fmt_opts, writer, depth + 1);
+                        try printDesc(V, writer, f);
+                    }
                 },
             }
         }

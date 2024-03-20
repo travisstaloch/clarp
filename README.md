@@ -167,5 +167,5 @@ Users can manually parse options by providing an `overrides` struct.  If any of 
 - [x] parse options
   - [x] add user_ctx to options, default null
   - [x] pass errwriter: io.AnyWriter to parse, default stderr
-- [ ] option to use kebab case
+- [x] option to use kebab case
 - [ ] allow overrides to mutate `seen_fields` by passing to `UserParseFn`

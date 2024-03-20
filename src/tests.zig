@@ -271,3 +271,24 @@ test "struct end mark" {
     try expect(&.{ exe_path, "--a", "--end-a", "--b", "20" }, .{ .b = 20 });
     try expect(&.{ exe_path, "--a", "--my-end-a-mark", "--b", "20" }, .{ .b = 20 });
 }
+
+test "caseFn" {
+    {
+        const P = clarp.Parser(
+            union(enum) {
+                foo_bar: u8,
+            },
+            .{ .caseFn = clarp.caseKebab },
+        );
+        const expect = expectFn(P);
+        try expect(&.{ exe_path, "foo-bar", "42" }, .{ .foo_bar = 42 });
+    }
+    {
+        const P = clarp.Parser(
+            struct { foo_bar: u8 },
+            .{ .caseFn = clarp.caseKebab },
+        );
+        const expect = expectFn(P);
+        try expect(&.{ exe_path, "--foo-bar", "42" }, .{ .foo_bar = 42 });
+    }
+}
