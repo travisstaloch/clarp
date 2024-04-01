@@ -4,7 +4,7 @@
 
 const std = @import("std");
 const mem = std.mem;
-const log = std.log.scoped(.clarp);
+const log = std.log.scoped(.@"cli-parsing");
 
 pub const Option = struct {
     alias: ?[]const u8 = null,
@@ -216,9 +216,9 @@ pub fn Parser(
                     const Shorts = ShortNames(x.fields);
                     comptime var buflen: u16 = 0;
                     inline for (x.fields) |f| buflen = @max(buflen, f.name.len);
-                    comptime var buf: [buflen]u8 = undefined;
+                    var buf: [buflen]u8 = undefined;
                     inline for (x.fields, @typeInfo(Shorts).Enum.fields) |uf, sf| {
-                        const tagname = comptime options.caseFn(&buf, uf.name);
+                        const tagname = options.caseFn(&buf, uf.name);
                         if (mem.eql(u8, sf.name, args.*[0]) or
                             mem.eql(u8, tagname, args.*[0]))
                         {
@@ -312,9 +312,9 @@ pub fn Parser(
                         if (is_long) {
                             comptime var buflen: u16 = 0;
                             inline for (x.fields) |f| buflen = @max(buflen, f.name.len);
-                            comptime var buf: [buflen]u8 = undefined;
+                            var buf: [buflen]u8 = undefined;
                             inline for (x.fields, 0..) |f, fi| {
-                                const fname = comptime options.caseFn(&buf, f.name);
+                                const fname = options.caseFn(&buf, f.name);
                                 if (mem.eql(u8, args.*[0][2..], fname)) {
                                     log.debug("found long {s} {s}", .{ args.*[0], fname });
                                     args.* = args.*[@intFromBool(!isFlagType(f.type))..];
@@ -364,8 +364,12 @@ pub fn Parser(
                     if (field_names.len != 0 and fields_seen.count() != x.fields.len) {
                         logErr("missing fields: ", .{});
                         var iter = fields_seen.iterator(.{ .kind = .unset });
-                        while (iter.next()) |fi| {
-                            logErr("'{s}', ", .{field_names[fi]});
+                        var i: u32 = 0;
+                        while (iter.next()) |fi| : (i += 1) {
+                            if (i == 0)
+                                logErr("'{s}'", .{field_names[fi]})
+                            else
+                                logErr(", '{s}'", .{field_names[fi]});
                         }
                         return error.MissingFields;
                     }
@@ -475,13 +479,14 @@ pub fn Parser(
                 .Struct => |x| {
                     comptime var buflen: u16 = 0;
                     inline for (x.fields) |f| buflen = @max(buflen, f.name.len);
-                    comptime var buf: [buflen]u8 = undefined;
+                    var buf: [buflen]u8 = undefined;
                     inline for (x.fields, 0..) |f, fi| {
                         try writer.writeByte('\n');
                         try writer.writeByteNTimes(' ', depth * 2);
                         if (!x.is_tuple) {
                             try writer.writeAll("--");
-                            try writer.writeAll(comptime options.caseFn(&buf, f.name));
+                            const name = options.caseFn(&buf, f.name);
+                            try writer.writeAll(name);
                         }
                         try printShort(V, x.fields, writer, fi);
                         try printAlias(V, writer, f);
@@ -503,11 +508,11 @@ pub fn Parser(
                 .Union => |x| {
                     comptime var buflen: u16 = 0;
                     inline for (x.fields) |f| buflen = @max(buflen, f.name.len);
-                    comptime var buf: [buflen]u8 = undefined;
+                    var buf: [buflen]u8 = undefined;
                     inline for (x.fields, 0..) |f, fi| {
                         try writer.writeByte('\n');
                         try writer.writeByteNTimes(' ', depth * 2);
-                        try writer.writeAll(comptime options.caseFn(&buf, f.name));
+                        try writer.writeAll(options.caseFn(&buf, f.name));
                         try printShort(V, x.fields, writer, fi);
                         try printAlias(V, writer, f);
                         try printHelp(f.type, fmt, fmt_opts, writer, depth + 1);
@@ -524,7 +529,7 @@ pub fn Parser(
             }
         }
 
-        fn printShort(comptime V: type, vfields: anytype, writer: anytype, comptime fieldi: usize) !void {
+        fn printShort(comptime V: type, comptime vfields: anytype, writer: anytype, comptime fieldi: usize) !void {
             if (@hasDecl(V, "derive_short_names") and V.derive_short_names) {
                 const alias = @typeInfo(ShortNames(vfields)).Enum.fields[fieldi];
                 const info = @typeInfo(V);

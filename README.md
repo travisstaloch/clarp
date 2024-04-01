@@ -25,7 +25,7 @@ Struct types create sequences of options.  Options match field names with leadin
 
 Tuple types create unnamed sequences and are parsed strictly by position.
 
-Bool field types create 'flags' and may be specified as `--flag` or `true`/`false` when unnamed.  They are always optional and default to false.
+Bool fields create 'flags' and may be specified as `--flag` or `true`/`false` when unnamed.  They are always optional and default to false.
 
 ## Zig version
 This package was developed against zig version 0.12.0-dev.3343+294f51814
@@ -169,3 +169,10 @@ Users can manually parse options by providing an `overrides` struct.  If any of 
   - [x] pass errwriter: io.AnyWriter to parse, default stderr
 - [x] option to use kebab case
 - [ ] allow overrides to mutate `seen_fields` by passing to `UserParseFn`
+- [ ] unify error writing. currently using log.err, stderr, err_writer. these should be one.
+- [ ] allow collapsing several shorts into one i.e. '-ab' instead of '-a -b'
+- [ ] help text
+  - [ ] override entire field text
+  - [ ] override entire help text
+  - [ ] print aligned table - choose min alignment + allow user to override
+- [ ] make README significantly shorter
