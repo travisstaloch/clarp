@@ -169,7 +169,8 @@ Users can manually parse options by providing an `overrides` struct.  If any of 
   - [x] pass errwriter: io.AnyWriter to parse, default stderr
 - [x] option to use kebab case
 - [ ] allow overrides to mutate `seen_fields` by passing to `UserParseFn`
-- [ ] unify error writing. currently using log.err, stderr, err_writer. these should be one.
+- [x] unify error writing. currently using log.err, stderr, err_writer. these should be one.
+  - [x] use ParseOptions.err_file
 - [ ] allow collapsing several shorts into one i.e. '-ab' instead of '-a -b'
 - [ ] help text
   - [ ] override entire field text

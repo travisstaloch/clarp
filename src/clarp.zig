@@ -27,16 +27,17 @@ pub const UserParseFn = fn (args: *[]const []const u8, ctx: ?*anyopaque) void;
 
 pub const ParseOptions = struct {
     user_ctx: ?*anyopaque = null,
-    err_writer: ?std.io.AnyWriter = null,
+    err_file: ?std.fs.File = null,
 };
 
 pub const HelpOptions = struct {
     err_writer: ?std.io.AnyWriter = null,
 };
 
-fn logErr(comptime fmt: anytype, args: anytype) void {
+fn logErr(comptime fmt: anytype, args: anytype, file: ?std.fs.File) !void {
     if (@import("builtin").is_test) return;
-    log.err(fmt, args);
+    const writer = (file orelse return).writer();
+    try writer.print("error(cli-args): " ++ fmt, args);
 }
 
 const CaseFn = @TypeOf(caseSame);
@@ -90,12 +91,14 @@ pub fn Parser(
             var rest = args[1..];
             if (rest.len != 0) {
                 if (std.meta.stringToEnum(options.help_flags, rest[0])) |_| {
-                    help(args[0], .{ .err_writer = parse_options.err_writer });
+                    const err_file = parse_options.err_file orelse std.io.getStdErr();
+                    help(args[0], .{ .err_writer = err_file.writer().any() });
                     return error.HelpShown;
                 }
             }
             const root = parsePayload(&rest, T, null, parse_options) catch |e| {
-                try printError(std.io.getStdErr(), args, rest);
+                const err_file = parse_options.err_file orelse std.io.getStdErr();
+                try printError(err_file, args, rest);
                 return e;
             };
             return if (rest.len != 0)
@@ -191,7 +194,7 @@ pub fn Parser(
                             .false => false,
                         };
                     }
-                    logErr("invalid bool '{s}'", .{args.*[0]});
+                    try logErr("invalid bool '{s}'", .{args.*[0]}, parse_options.err_file);
                     return error.InvalidBoolean;
                 },
                 .Optional => |x| if (mem.eql(u8, args.*[0], "null")) {
@@ -202,7 +205,7 @@ pub fn Parser(
                     args.* = args.*[1..];
                     return e;
                 } else {
-                    logErr("invalid enum tag '{s}'", .{args.*[0]});
+                    try logErr("invalid enum tag '{s}'", .{args.*[0]}, parse_options.err_file);
                     return error.InvalidEnum;
                 },
                 .Array => |x| {
@@ -232,7 +235,7 @@ pub fn Parser(
                         }
                     }
 
-                    logErr("unknown command '{s}'", .{args.*[0]});
+                    try logErr("unknown command '{s}'", .{args.*[0]}, parse_options.err_file);
                     return error.UnknownCommand;
                 },
                 .Struct => |x| {
@@ -324,7 +327,7 @@ pub fn Parser(
                                 }
                             }
                             // error if positional starts with '--'
-                            logErr("unknown option '{s}'", .{args.*[0]});
+                            try logErr("unknown option '{s}'", .{args.*[0]}, parse_options.err_file);
                             return error.UnknownOption;
                         }
 
@@ -332,7 +335,7 @@ pub fn Parser(
                         log.debug("parsing positional. fields seen {} arg {s}", .{ fields_seen.count(), args.*[0] });
                         var iter = fields_seen.iterator(.{ .kind = .unset });
                         const next_fieldi = iter.next() orelse {
-                            logErr("extra args {s}", .{args.*});
+                            try logErr("extra args {s}", .{args.*}, parse_options.err_file);
                             return error.ExtraArgs;
                         };
                         inline for (x.fields, 0..) |f, fi| {
@@ -362,14 +365,14 @@ pub fn Parser(
                     log.debug("fields seen {}/{}", .{ fields_seen.count(), x.fields.len });
                     const field_names = std.meta.fieldNames(V);
                     if (field_names.len != 0 and fields_seen.count() != x.fields.len) {
-                        logErr("missing fields: ", .{});
+                        try logErr("missing fields: ", .{}, parse_options.err_file);
                         var iter = fields_seen.iterator(.{ .kind = .unset });
                         var i: u32 = 0;
                         while (iter.next()) |fi| : (i += 1) {
                             if (i == 0)
-                                logErr("'{s}'", .{field_names[fi]})
+                                try logErr("'{s}'", .{field_names[fi]}, parse_options.err_file)
                             else
-                                logErr(", '{s}'", .{field_names[fi]});
+                                try logErr(", '{s}'", .{field_names[fi]}, parse_options.err_file);
                         }
                         return error.MissingFields;
                     }
