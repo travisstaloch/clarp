@@ -9,6 +9,7 @@ const log = std.log.scoped(.@"cli-parsing");
 pub const Option = struct {
     alias: ?[]const u8 = null,
     desc: ?[]const u8 = null,
+    help: ?[]const u8 = null,
 };
 
 pub fn Options(comptime T: type) type {
@@ -92,7 +93,7 @@ pub fn Parser(
             if (rest.len != 0) {
                 if (std.meta.stringToEnum(options.help_flags, rest[0])) |_| {
                     const err_file = parse_options.err_file orelse std.io.getStdErr();
-                    help(args[0], .{ .err_writer = err_file.writer().any() });
+                    try help(args[0], .{ .err_writer = err_file.writer().any() });
                     return error.HelpShown;
                 }
             }
@@ -393,7 +394,7 @@ pub fn Parser(
             if (fmt.len == 0)
                 try dump(self.root, fmt, fmt_opts, writer, 0)
             else if (comptime mem.eql(u8, fmt, "help")) {
-                help(self.exe_path, .{ .err_writer = writer });
+                try help(self.exe_path, .{ .err_writer = writer });
             } else @compileError("unknown fmt '" ++ fmt ++ "'");
         }
 
@@ -439,17 +440,20 @@ pub fn Parser(
             }
         }
 
-        pub fn help(exe_path: []const u8, help_options: HelpOptions) void {
+        pub fn help(exe_path: []const u8, help_options: HelpOptions) !void {
             const writer = help_options.err_writer orelse std.io.getStdErr().writer().any();
-            options.printUsage(writer, options.usage_fmt, std.fs.path.basename(exe_path));
-            writer.writeAll("\n  ") catch unreachable;
-            inline for (@typeInfo(options.help_flags).Enum.fields, 0..) |f, i| {
-                if (i != 0) writer.writeAll(" ") catch unreachable;
-                writer.writeAll(f.name) catch unreachable;
+            if (!@hasDecl(T, "help")) {
+                options.printUsage(writer, options.usage_fmt, std.fs.path.basename(exe_path));
+                try writer.writeAll("\n  ");
+                inline for (@typeInfo(options.help_flags).Enum.fields, 0..) |f, i| {
+                    if (i != 0) try writer.writeAll(" ");
+                    try writer.writeAll(f.name);
+                }
+                try writer.writeAll(" // show this message. must be first argument.");
             }
-            writer.writeAll(" // show this message. must be first argument.") catch unreachable;
-            printHelp(T, "", .{}, writer, 1) catch unreachable;
-            writer.writeAll("\n\n") catch unreachable;
+            try printHelp(T, "", .{}, writer, 1);
+            if (!@hasDecl(T, "help"))
+                try writer.writeAll("\n\n");
         }
 
         pub fn printHelp(
@@ -480,12 +484,22 @@ pub fn Parser(
                 ),
                 .Optional => |x| try writer.print(": ?{s}", .{@typeName(x.child)}),
                 .Struct => |x| {
+                    if (@hasDecl(V, "help")) {
+                        try writer.writeAll(V.help);
+                        return;
+                    }
                     comptime var buflen: u16 = 0;
                     inline for (x.fields) |f| buflen = @max(buflen, f.name.len);
                     var buf: [buflen]u8 = undefined;
                     inline for (x.fields, 0..) |f, fi| {
                         try writer.writeByte('\n');
                         try writer.writeByteNTimes(' ', depth * 2);
+                        if (@hasDecl(V, "options")) {
+                            if (@field(V.options, f.name).help) |h| {
+                                try writer.writeAll(h);
+                                continue;
+                            }
+                        }
                         if (!x.is_tuple) {
                             try writer.writeAll("--");
                             const name = options.caseFn(&buf, f.name);
@@ -509,12 +523,22 @@ pub fn Parser(
                     }
                 },
                 .Union => |x| {
+                    if (@hasDecl(V, "help")) {
+                        try writer.writeAll(V.help);
+                        return;
+                    }
                     comptime var buflen: u16 = 0;
                     inline for (x.fields) |f| buflen = @max(buflen, f.name.len);
                     var buf: [buflen]u8 = undefined;
                     inline for (x.fields, 0..) |f, fi| {
                         try writer.writeByte('\n');
                         try writer.writeByteNTimes(' ', depth * 2);
+                        if (@hasDecl(V, "options")) {
+                            if (@field(V.options, f.name).help) |h| {
+                                try writer.writeAll(h);
+                                continue;
+                            }
+                        }
                         try writer.writeAll(options.caseFn(&buf, f.name));
                         try printShort(V, x.fields, writer, fi);
                         try printAlias(V, writer, f);

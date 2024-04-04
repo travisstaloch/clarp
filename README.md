@@ -173,7 +173,7 @@ Users can manually parse options by providing an `overrides` struct.  If any of 
   - [x] use ParseOptions.err_file
 - [ ] allow collapsing several shorts into one i.e. '-ab' instead of '-a -b'
 - [ ] help text
-  - [ ] override entire field text
-  - [ ] override entire help text
+  - [x] override text by field
+  - [x] override entire help text
   - [ ] print aligned table - choose min alignment + allow user to override
 - [ ] make README significantly shorter

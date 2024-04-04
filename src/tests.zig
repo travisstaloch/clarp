@@ -14,6 +14,12 @@ const TestParser = clarp.Parser(union(enum) {
                 .alias = "-o",
                 .desc = "file path to output file",
             },
+            .piece_index = .{
+                .help =
+                \\  help for this field
+                \\      blah blah
+                ,
+            },
         };
     },
     defaults: struct {
@@ -216,7 +222,7 @@ pub fn main() !void {
     const opts = SimpleOptions.parse(args, .{}) catch |e| switch (e) {
         error.HelpShown => return,
         else => {
-            SimpleOptions.help(args[0], .{});
+            try SimpleOptions.help(args[0], .{});
             return e;
         },
     };
@@ -291,4 +297,90 @@ test "caseFn" {
         const expect = expectFn(P);
         try expect(&.{ exe_path, "--foo-bar", "42" }, .{ .foo_bar = 42 });
     }
+}
+
+test "help override field struct" {
+    const P = clarp.Parser(struct {
+        foo: []const u8,
+        pub const options = Options(@This()){
+            .foo = .{
+                .help = "--foo: string // custom foo help",
+            },
+        };
+    }, .{});
+    const talloc = std.testing.allocator;
+    var l = std.ArrayList(u8).init(talloc);
+    defer l.deinit();
+    try P.help("exe", .{ .err_writer = l.writer().any() });
+    try testing.expectEqualStrings(
+        \\
+        \\USAGE: exe <command> <options>...
+        \\commands:
+        \\  help --help -h // show this message. must be first argument.
+        \\  --foo: string // custom foo help
+        \\
+        \\
+    , l.items);
+}
+
+test "help override field union" {
+    const P = clarp.Parser(union(enum) {
+        foo: []const u8,
+        pub const options = Options(@This()){
+            .foo = .{
+                .help = "foo: string // custom foo help",
+            },
+        };
+    }, .{});
+    const talloc = std.testing.allocator;
+    var l = std.ArrayList(u8).init(talloc);
+    defer l.deinit();
+    try P.help("exe", .{ .err_writer = l.writer().any() });
+    try testing.expectEqualStrings(
+        \\
+        \\USAGE: exe <command> <options>...
+        \\commands:
+        \\  help --help -h // show this message. must be first argument.
+        \\  foo: string // custom foo help
+        \\
+        \\
+    , l.items);
+}
+
+test "help override all - struct" {
+    const P = clarp.Parser(struct {
+        pub const help =
+            \\
+            \\USAGE: exe <options>
+            \\options:
+            \\  help --help -h // show this message. must be first argument.
+            \\  --foo: string  // foo desc
+            \\  --bar: string  // bar desc
+            \\
+        ;
+    }, .{});
+    const talloc = std.testing.allocator;
+    var l = std.ArrayList(u8).init(talloc);
+    defer l.deinit();
+    try P.help("exe", .{ .err_writer = l.writer().any() });
+    try testing.expectEqualStrings(P.Root.help, l.items);
+}
+
+test "help override all - union" {
+    const P = clarp.Parser(struct {
+        pub const help =
+            \\
+            \\USAGE: exe <commands>
+            \\commands:
+            \\  help --help -h // show this message. must be first argument.
+            \\  foo: string  // foo desc
+            \\  bar: string  // bar desc
+            \\
+        ;
+    }, .{});
+    const talloc = std.testing.allocator;
+    var l = std.ArrayList(u8).init(talloc);
+    defer l.deinit();
+    try P.help("exe", .{ .err_writer = l.writer().any() });
+    try testing.expectEqualStrings(P.Root.help, l.items);
 }
