@@ -53,8 +53,7 @@ fn expectFn(comptime P: type) ExpectFn(P) {
         fn func(args: []const []const u8, expected: std.meta.FieldType(P, .root)) anyerror!void {
             const x = try P.parse(args, .{});
             // exercise dump() and printHelp() to catch compile errors
-            const Root = std.meta.FieldType(P, .root);
-            try P.printHelp(Root, "", .{}, std.io.null_writer.any(), 0);
+            try P.printHelp(P.Root, "", .{}, std.io.null_writer.any(), 0);
             try P.dump(x, "", .{}, std.io.null_writer, 0);
             try x.dump("", .{}, std.io.null_writer, 0);
             try std.io.null_writer.print("{help}", .{x});
@@ -383,4 +382,16 @@ test "help override all - union" {
     defer l.deinit();
     try P.help("exe", .{ .err_writer = l.writer().any() });
     try testing.expectEqualStrings(P.Root.help, l.items);
+}
+
+test "collapse derived short flags" {
+    const P = clarp.Parser(struct {
+        foo: bool,
+        bar: bool,
+        pub const derive_short_names = true;
+    }, .{});
+
+    const expect = expectFn(P);
+    try expect(&.{exe_path}, .{ .foo = false, .bar = false });
+    try expect(&.{ exe_path, "-fb" }, .{ .foo = true, .bar = true });
 }

@@ -171,7 +171,7 @@ Users can manually parse options by providing an `overrides` struct.  If any of 
 - [ ] allow overrides to mutate `seen_fields` by passing to `UserParseFn`
 - [x] unify error writing. currently using log.err, stderr, err_writer. these should be one.
   - [x] use ParseOptions.err_file
-- [ ] allow collapsing several shorts into one i.e. '-ab' instead of '-a -b'
+- [x] allow collapsing several shorts into one i.e. '-ab' instead of '-a -b'
 - [ ] help text
   - [x] override text by field
   - [x] override entire help text

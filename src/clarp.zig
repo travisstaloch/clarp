@@ -195,7 +195,7 @@ pub fn Parser(
                             .false => false,
                         };
                     }
-                    try logErr("invalid bool '{s}'", .{args.*[0]}, parse_options.err_file);
+                    try logErr("invalid bool '{s}'\n", .{args.*[0]}, parse_options.err_file);
                     return error.InvalidBoolean;
                 },
                 .Optional => |x| if (mem.eql(u8, args.*[0], "null")) {
@@ -206,7 +206,7 @@ pub fn Parser(
                     args.* = args.*[1..];
                     return e;
                 } else {
-                    try logErr("invalid enum tag '{s}'", .{args.*[0]}, parse_options.err_file);
+                    try logErr("invalid enum tag '{s}'\n", .{args.*[0]}, parse_options.err_file);
                     return error.InvalidEnum;
                 },
                 .Array => |x| {
@@ -236,7 +236,7 @@ pub fn Parser(
                         }
                     }
 
-                    try logErr("unknown command '{s}'", .{args.*[0]}, parse_options.err_file);
+                    try logErr("unknown command '{s}'\n", .{args.*[0]}, parse_options.err_file);
                     return error.UnknownCommand;
                 },
                 .Struct => |x| {
@@ -280,15 +280,44 @@ pub fn Parser(
                         {
                             const vfields = @typeInfo(V).Struct.fields;
                             const Shorts = ShortNames(vfields);
-                            inline for (@typeInfo(Shorts).Enum.fields, 0..) |f, fi| {
-                                if (mem.eql(u8, args.*[0][1..], f.name)) {
-                                    log.debug("found derived short name {s} {s}", .{ args.*[0], f.name });
+                            const mshort = std.meta.stringToEnum(Shorts, args.*[0][1..]);
+                            if (mshort) |short| switch (short) {
+                                inline else => |tag| {
+                                    log.debug("found derived short name {s} {s}", .{ args.*[0], @tagName(tag) });
+                                    const fi = @intFromEnum(tag);
                                     const Ft = @TypeOf(@field(payload, vfields[fi].name));
                                     args.* = args.*[@intFromBool(!isFlagType(Ft))..];
                                     @field(payload, vfields[fi].name) =
                                         try parsePayload(args, Ft, vfields[fi].name, parse_options);
                                     fields_seen.set(fi);
                                     continue :args;
+                                },
+                            } else {
+                                // parse shorts with -abc syntax where
+                                // a, b, c are derived short field names
+                                var arg = args.*[0][1..];
+                                log.debug("arg {s} shorts {s}", .{ arg, std.meta.fieldNames(Shorts) });
+                                shorts: while (arg.len > 0) {
+                                    inline for (@typeInfo(Shorts).Enum.fields, 0..) |f, fi| {
+                                        if (isFlagType(vfields[fi].type) and mem.startsWith(u8, arg, f.name)) {
+                                            const Ft = @TypeOf(@field(payload, vfields[fi].name));
+                                            // construct a fake, single flag arg.  this allows bool fields to work
+                                            var tmp_args: []const []const u8 = &[_][]const u8{"--" ++ vfields[fi].name};
+                                            @field(payload, vfields[fi].name) =
+                                                try parsePayload(&tmp_args, Ft, vfields[fi].name, parse_options);
+                                            fields_seen.set(fi);
+                                            arg = arg[f.name.len..];
+                                            continue :shorts;
+                                        }
+                                    } else break;
+                                }
+
+                                if (arg.len == 0) {
+                                    args.* = args.*[1..];
+                                    continue :args;
+                                } else {
+                                    try logErr("unknown short option(s) '{s}'\n", .{arg}, parse_options.err_file);
+                                    return error.UnknownOption;
                                 }
                             }
                         }
@@ -328,7 +357,7 @@ pub fn Parser(
                                 }
                             }
                             // error if positional starts with '--'
-                            try logErr("unknown option '{s}'", .{args.*[0]}, parse_options.err_file);
+                            try logErr("unknown option '{s}'\n", .{args.*[0]}, parse_options.err_file);
                             return error.UnknownOption;
                         }
 
@@ -336,7 +365,7 @@ pub fn Parser(
                         log.debug("parsing positional. fields seen {} arg {s}", .{ fields_seen.count(), args.*[0] });
                         var iter = fields_seen.iterator(.{ .kind = .unset });
                         const next_fieldi = iter.next() orelse {
-                            try logErr("extra args {s}", .{args.*}, parse_options.err_file);
+                            try logErr("extra args {s}\n", .{args.*}, parse_options.err_file);
                             return error.ExtraArgs;
                         };
                         inline for (x.fields, 0..) |f, fi| {
@@ -375,6 +404,7 @@ pub fn Parser(
                             else
                                 try logErr(", '{s}'", .{field_names[fi]}, parse_options.err_file);
                         }
+                        try logErr("\n", .{}, parse_options.err_file);
                         return error.MissingFields;
                     }
 
