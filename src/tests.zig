@@ -221,7 +221,9 @@ pub fn main() !void {
     const allocator = arena.allocator();
 
     const args = try std.process.argsAlloc(allocator);
-    const opts = SimpleOptions.parse(args, .{}) catch |e| switch (e) {
+    const opts = SimpleOptions.parse(args, .{
+        .err_file = std.io.getStdErr(),
+    }) catch |e| switch (e) {
         error.HelpShown => return,
         else => {
             try SimpleOptions.help(args[0], .{});

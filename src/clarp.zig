@@ -1,24 +1,42 @@
-//! clarp - a cli arg parser
 //!
+//! clarp - a command line arg parser
 //!
 
 const std = @import("std");
 const mem = std.mem;
 const log = std.log.scoped(.@"cli-parsing");
 
-pub const Option = struct {
+pub const FieldOption = struct {
+    /// an alternate option or command name for this field.  for a field named
+    /// 'foo' and alias '-f', either '--foo' and '-f' will match.
     alias: ?[]const u8 = null,
+    /// description for this field to be shown in help
     desc: ?[]const u8 = null,
+    /// help text override for this field
     help: ?[]const u8 = null,
 };
 
 pub fn Options(comptime T: type) type {
     return struct {
-        fields: std.enums.EnumFieldStruct(std.meta.FieldEnum(T), Option, .{}) = .{},
+        /// field options.  a struct of optional `FieldOption` with field names
+        /// matching the parent struct.
+        fields: Fields = .{},
+        /// help text override for the entrire struct
         help: ?[]const u8 = null,
+        /// when found, denotes end of input for this struct.  any further
+        /// input may apply to other fields.  default '--end-foo' for a field
+        /// named 'foo' .
         end_mark: ?[]const u8 = null,
+        /// when true, short names will be derived for each field in the parent
+        /// struct. i.e. struct{foo: u8, bar: u8} results in '-f' and '-b'
+        /// derived short names
         derive_short_names: bool = false,
+        /// a struct with pub functions that can be used to override parsing of
+        /// individual options.  i.e. `struct {pub fn @"--foo"(...)}` to parse
+        /// '--foo' option.
         overrides: ?type = null,
+
+        const Fields = std.enums.EnumFieldStruct(std.meta.FieldEnum(T), FieldOption, .{});
     };
 }
 
@@ -339,7 +357,7 @@ pub fn Parser(
                         // look for alias names
                         if (has_options) {
                             inline for (@typeInfo(@TypeOf(V.clarp_options.fields)).Struct.fields, 0..) |f, fi| {
-                                const opt: Option = @field(V.clarp_options.fields, f.name);
+                                const opt: FieldOption = @field(V.clarp_options.fields, f.name);
                                 const alias = opt.alias orelse continue;
                                 if (mem.eql(u8, args.*[0], alias)) {
                                     log.debug("found alias {s} {s}", .{ args.*[0], f.name });
@@ -598,7 +616,7 @@ pub fn Parser(
 
         fn printAlias(comptime V: type, writer: anytype, field: anytype) !void {
             if (@hasDecl(V, "clarp_options")) {
-                const opt: Option = @field(V.clarp_options.fields, field.name);
+                const opt: FieldOption = @field(V.clarp_options.fields, field.name);
                 if (opt.alias) |alias| try writer.print(" {s}", .{alias});
             }
         }
@@ -617,7 +635,7 @@ pub fn Parser(
 
         fn printDesc(comptime V: type, writer: anytype, field: anytype) !void {
             if (@hasDecl(V, "clarp_options")) {
-                const opt: Option = @field(V.clarp_options.fields, field.name);
+                const opt: FieldOption = @field(V.clarp_options.fields, field.name);
                 if (opt.desc) |d| try writer.print(" // {s}", .{d});
             }
         }

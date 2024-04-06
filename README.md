@@ -53,10 +53,12 @@ const ArgParser = clarp.Parser(struct {
     opt1: []const u8,
     opt2: enum { a, b } = .a,
 
-    pub const options = clarp.Options(@This()){
-        .opt1 = .{
-            .alias = "-o1",
-            .desc = "first option description",
+    pub const clarp_options = clarp.Options(@This()){
+        .fields = .{
+            .opt1 = .{
+                .alias = "-o1",
+                .desc = "first option description",
+            },
         },
     };
 }, .{ .usage_fmt = "\nUSAGE: $ {s} <options>\n\noptions:" });
@@ -73,6 +75,9 @@ pub fn main() !void {
     std.debug.print("{}\n", .{opts});
 }
 ```
+
+### [clarp_options](src/clarp.zig#L19)
+When a struct or union contains a `pub const clarp_options` declaration, it changes parsing behavior.  Nested structs and unions may declare their own `clarp_options`.
 
 ### Default help flags
 If the first arg is `help`, `--help` or `-h` usage is displayed.  Here our `usage_fmt` option appears before the generated text.
@@ -92,7 +97,7 @@ options:
 Notice how this message is derived from the struct above and that its `options` declaration affects the output, adding the `-o1` alias and description.
 
 ### Parser Options
-second argument to `clarp.Parser()`
+second argument to `clarp.Parser()`.  these are global options.
 #### help_flags: type (enum)
 ```zig
 clarp.Parser(..., .{ .help_flags = enum { usage, @"--usage" } });
