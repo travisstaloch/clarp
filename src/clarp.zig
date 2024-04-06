@@ -13,8 +13,13 @@ pub const Option = struct {
 };
 
 pub fn Options(comptime T: type) type {
-    const Fe = std.meta.FieldEnum(T);
-    return std.enums.EnumFieldStruct(Fe, Option, .{});
+    return struct {
+        fields: std.enums.EnumFieldStruct(std.meta.FieldEnum(T), Option, .{}) = .{},
+        help: ?[]const u8 = null,
+        end_mark: ?[]const u8 = null,
+        derive_short_names: bool = false,
+        overrides: ?type = null,
+    };
 }
 
 /// default flags for showing help/usage
@@ -248,12 +253,13 @@ pub fn Parser(
                     return error.UnknownCommand;
                 },
                 .Struct => |x| {
+                    const has_options = @hasDecl(V, "clarp_options");
                     var payload: V = mem.zeroInit(V, .{});
                     var fields_seen = std.StaticBitSet(x.fields.len).initEmpty();
 
                     args: while (args.len > 0 and
                         (fields_seen.count() < x.fields.len or
-                        @hasDecl(V, "overrides")))
+                        (has_options and V.clarp_options.overrides != null)))
                     {
                         inline for (x.fields, 0..) |f, i| {
                             if (fields_seen.isSet(i))
@@ -261,8 +267,8 @@ pub fn Parser(
                         }
 
                         if (field_name != null and
-                            (@hasDecl(V, "end_mark") and
-                            mem.eql(u8, args.*[0], V.end_mark)) or
+                            ((has_options and V.clarp_options.end_mark != null) and
+                            mem.eql(u8, args.*[0], V.clarp_options.end_mark.?)) or
                             (mem.startsWith(u8, args.*[0], "--end-") and
                             mem.eql(u8, args.*[0][6..], field_name.?)))
                         {
@@ -270,11 +276,11 @@ pub fn Parser(
                             return payload;
                         }
 
-                        if (@hasDecl(V, "overrides")) {
-                            inline for (comptime std.meta.declarations(V.overrides)) |decl| {
+                        if (has_options and V.clarp_options.overrides != null) {
+                            inline for (comptime std.meta.declarations(V.clarp_options.overrides.?)) |decl| {
                                 if (mem.eql(u8, decl.name, args.*[0])) {
                                     args.* = args.*[1..];
-                                    const userParseFn: UserParseFn = @field(V.overrides, decl.name);
+                                    const userParseFn: UserParseFn = @field(V.clarp_options.overrides.?, decl.name);
                                     userParseFn(args, parse_options.user_ctx);
                                     continue :args;
                                 }
@@ -282,8 +288,8 @@ pub fn Parser(
                         }
 
                         // look for derived short names
-                        if (@hasDecl(V, "derive_short_names") and
-                            V.derive_short_names and
+                        if (has_options and
+                            V.clarp_options.derive_short_names and
                             mem.startsWith(u8, args.*[0], "-"))
                         {
                             const vfields = @typeInfo(V).Struct.fields;
@@ -331,9 +337,9 @@ pub fn Parser(
                         }
 
                         // look for alias names
-                        if (@hasDecl(V, "options")) {
-                            inline for (@typeInfo(@TypeOf(V.options)).Struct.fields, 0..) |f, fi| {
-                                const opt: Option = @field(V.options, f.name);
+                        if (has_options) {
+                            inline for (@typeInfo(@TypeOf(V.clarp_options.fields)).Struct.fields, 0..) |f, fi| {
+                                const opt: Option = @field(V.clarp_options.fields, f.name);
                                 const alias = opt.alias orelse continue;
                                 if (mem.eql(u8, args.*[0], alias)) {
                                     log.debug("found alias {s} {s}", .{ args.*[0], f.name });
@@ -480,7 +486,8 @@ pub fn Parser(
 
         pub fn help(exe_path: []const u8, help_options: HelpOptions) !void {
             const writer = help_options.err_writer orelse std.io.getStdErr().writer().any();
-            if (!@hasDecl(T, "help")) {
+            const has_help = @hasDecl(T, "clarp_options") and T.clarp_options.help != null;
+            if (!has_help) {
                 options.printUsage(writer, options.usage_fmt, std.fs.path.basename(exe_path));
                 try writer.writeAll("\n  ");
                 inline for (@typeInfo(options.help_flags).Enum.fields, 0..) |f, i| {
@@ -490,7 +497,7 @@ pub fn Parser(
                 try writer.writeAll(" // show this message. must be first argument.");
             }
             try printHelp(T, "", .{}, writer, 1);
-            if (!@hasDecl(T, "help"))
+            if (!has_help)
                 try writer.writeAll("\n\n");
         }
 
@@ -522,8 +529,9 @@ pub fn Parser(
                 ),
                 .Optional => |x| try writer.print(": ?{s}", .{@typeName(x.child)}),
                 .Struct => |x| {
-                    if (@hasDecl(V, "help")) {
-                        try writer.writeAll(V.help);
+                    const has_options = @hasDecl(V, "clarp_options");
+                    if (has_options and V.clarp_options.help != null) {
+                        try writer.writeAll(V.clarp_options.help.?);
                         return;
                     }
                     comptime var buflen: u16 = 0;
@@ -532,8 +540,8 @@ pub fn Parser(
                     inline for (x.fields, 0..) |f, fi| {
                         try writer.writeByte('\n');
                         try writer.writeByteNTimes(' ', depth * 2);
-                        if (@hasDecl(V, "options")) {
-                            if (@field(V.options, f.name).help) |h| {
+                        if (has_options) {
+                            if (@field(V.clarp_options.fields, f.name).help) |h| {
                                 try writer.writeAll(h);
                                 continue;
                             }
@@ -561,8 +569,9 @@ pub fn Parser(
                     }
                 },
                 .Union => |x| {
-                    if (@hasDecl(V, "help")) {
-                        try writer.writeAll(V.help);
+                    const has_options = @hasDecl(V, "clarp_options");
+                    if (has_options and V.clarp_options.help != null) {
+                        try writer.writeAll(V.clarp_options.help.?);
                         return;
                     }
                     comptime var buflen: u16 = 0;
@@ -571,8 +580,8 @@ pub fn Parser(
                     inline for (x.fields, 0..) |f, fi| {
                         try writer.writeByte('\n');
                         try writer.writeByteNTimes(' ', depth * 2);
-                        if (@hasDecl(V, "options")) {
-                            if (@field(V.options, f.name).help) |h| {
+                        if (has_options) {
+                            if (@field(V.clarp_options.fields, f.name).help) |h| {
                                 try writer.writeAll(h);
                                 continue;
                             }
@@ -588,14 +597,14 @@ pub fn Parser(
         }
 
         fn printAlias(comptime V: type, writer: anytype, field: anytype) !void {
-            if (@hasDecl(V, "options")) {
-                const opt: Option = @field(V.options, field.name);
+            if (@hasDecl(V, "clarp_options")) {
+                const opt: Option = @field(V.clarp_options.fields, field.name);
                 if (opt.alias) |alias| try writer.print(" {s}", .{alias});
             }
         }
 
         fn printShort(comptime V: type, comptime vfields: anytype, writer: anytype, comptime fieldi: usize) !void {
-            if (@hasDecl(V, "derive_short_names") and V.derive_short_names) {
+            if (@hasDecl(V, "clarp_options") and V.clarp_options.derive_short_names) {
                 const alias = @typeInfo(ShortNames(vfields)).Enum.fields[fieldi];
                 const info = @typeInfo(V);
                 switch (info) {
@@ -607,8 +616,8 @@ pub fn Parser(
         }
 
         fn printDesc(comptime V: type, writer: anytype, field: anytype) !void {
-            if (@hasDecl(V, "options")) {
-                const opt: Option = @field(V.options, field.name);
+            if (@hasDecl(V, "clarp_options")) {
+                const opt: Option = @field(V.clarp_options.fields, field.name);
                 if (opt.desc) |d| try writer.print(" // {s}", .{d});
             }
         }

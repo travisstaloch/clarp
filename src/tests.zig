@@ -9,16 +9,18 @@ const TestParser = clarp.Parser(union(enum) {
     download: struct {
         outpath: []const u8,
         piece_index: u32,
-        pub const options = Options(@This()){
-            .outpath = .{
-                .alias = "-o",
-                .desc = "file path to output file",
-            },
-            .piece_index = .{
-                .help =
-                \\  help for this field
-                \\      blah blah
-                ,
+        pub const clarp_options = Options(@This()){
+            .fields = .{
+                .outpath = .{
+                    .alias = "-o",
+                    .desc = "file path to output file",
+                },
+                .piece_index = .{
+                    .help =
+                    \\  help for this field
+                    \\      blah blah
+                    ,
+                },
             },
         };
     },
@@ -169,19 +171,21 @@ test "overrides" {
     const Ctx = struct { foo: u8 = 0, bar: u8 = 0 };
     var ctx = Ctx{};
     const P = clarp.Parser(struct {
-        pub const overrides = struct {
-            pub fn @"--foo"(args: *[]const []const u8, user_ctx: ?*anyopaque) void {
-                @as(*Ctx, @ptrCast(user_ctx)).foo =
-                    std.fmt.parseInt(u8, args.*[0], 10) catch unreachable;
-                args.* = args.*[1..];
-            }
-            pub fn @"--"(args: *[]const []const u8, user_ctx: ?*anyopaque) void {
-                testing.expectEqualStrings("bar", args.*[0]) catch unreachable;
-                args.* = args.*[1..];
-                @as(*Ctx, @ptrCast(user_ctx)).bar =
-                    std.fmt.parseInt(u8, args.*[0], 10) catch unreachable;
-                args.* = args.*[1..];
-            }
+        pub const clarp_options = Options(@This()){
+            .overrides = struct {
+                pub fn @"--foo"(args: *[]const []const u8, user_ctx: ?*anyopaque) void {
+                    @as(*Ctx, @ptrCast(user_ctx)).foo =
+                        std.fmt.parseInt(u8, args.*[0], 10) catch unreachable;
+                    args.* = args.*[1..];
+                }
+                pub fn @"--"(args: *[]const []const u8, user_ctx: ?*anyopaque) void {
+                    testing.expectEqualStrings("bar", args.*[0]) catch unreachable;
+                    args.* = args.*[1..];
+                    @as(*Ctx, @ptrCast(user_ctx)).bar =
+                        std.fmt.parseInt(u8, args.*[0], 10) catch unreachable;
+                    args.* = args.*[1..];
+                }
+            },
         };
     }, .{});
 
@@ -195,20 +199,19 @@ const SimpleOptions = clarp.Parser(struct {
     opt1: []const u8,
     opt2: enum { a, b } = .a,
 
-    pub const options = clarp.Options(@This()){
-        .opt1 = .{
-            .alias = "-o1",
-            .desc = "first option description",
+    pub const clarp_options = clarp.Options(@This()){
+        .fields = .{
+            .opt1 = .{
+                .alias = "-o1",
+                .desc = "first option description",
+            },
         },
     };
 }, .{ .usage_fmt = "\nUSAGE: $ {s} <options>...\n\noptions:" });
 const exe_path = "/path/to/exe";
 test SimpleOptions {
     const expect = expectFn(SimpleOptions);
-    try expect(
-        &.{ exe_path, "--opt1", "foo" },
-        .{ .opt1 = "foo", .opt2 = .a },
-    );
+    try expect(&.{ exe_path, "--opt1", "foo" }, .{ .opt1 = "foo", .opt2 = .a });
 }
 
 pub const std_options = std.Options{ .log_level = .warn };
@@ -235,7 +238,7 @@ test "derive_short_names struct" {
         xxy: u8,
         yyy: u8,
 
-        pub const derive_short_names = true;
+        pub const clarp_options = Options(@This()){ .derive_short_names = true };
     }, .{});
     const expect = expectFn(P);
     try expect(
@@ -251,7 +254,7 @@ test "derive_short_names union" {
         xxy: u8,
         yyy: u8,
 
-        pub const derive_short_names = true;
+        pub const clarp_options = Options(@This()){ .derive_short_names = true };
     }, .{});
     const expect = expectFn(P);
     try expect(&.{ exe_path, "x", "1" }, .{ .xxx = 1 });
@@ -264,7 +267,7 @@ test "struct end mark" {
     const P = clarp.Parser(struct {
         a: struct {
             b: u8 = 1,
-            pub const end_mark = "--my-end-a-mark";
+            pub const clarp_options = Options(@This()){ .end_mark = "--my-end-a-mark" };
         } = .{},
         b: u8 = 2,
     }, .{});
@@ -280,9 +283,7 @@ test "struct end mark" {
 test "caseFn" {
     {
         const P = clarp.Parser(
-            union(enum) {
-                foo_bar: u8,
-            },
+            union(enum) { foo_bar: u8 },
             .{ .caseFn = clarp.caseKebab },
         );
         const expect = expectFn(P);
@@ -301,9 +302,9 @@ test "caseFn" {
 test "help override field - struct" {
     const P = clarp.Parser(struct {
         foo: []const u8,
-        pub const options = Options(@This()){
-            .foo = .{
-                .help = "--foo: string // custom foo help",
+        pub const clarp_options = Options(@This()){
+            .fields = .{
+                .foo = .{ .help = "--foo: string // custom foo help" },
             },
         };
     }, .{});
@@ -325,9 +326,9 @@ test "help override field - struct" {
 test "help override field - union" {
     const P = clarp.Parser(union(enum) {
         foo: []const u8,
-        pub const options = Options(@This()){
-            .foo = .{
-                .help = "foo: string // custom foo help",
+        pub const clarp_options = Options(@This()){
+            .fields = .{
+                .foo = .{ .help = "foo: string // custom foo help" },
             },
         };
     }, .{});
@@ -348,7 +349,8 @@ test "help override field - union" {
 
 test "help override all - struct" {
     const P = clarp.Parser(struct {
-        pub const help =
+        pub const clarp_options = Options(@This()){
+            .help =
             \\
             \\USAGE: exe <options>
             \\options:
@@ -356,18 +358,20 @@ test "help override all - struct" {
             \\  --foo: string  // foo desc
             \\  --bar: string  // bar desc
             \\
-        ;
+            ,
+        };
     }, .{});
     const talloc = std.testing.allocator;
     var l = std.ArrayList(u8).init(talloc);
     defer l.deinit();
     try P.help("exe", .{ .err_writer = l.writer().any() });
-    try testing.expectEqualStrings(P.Root.help, l.items);
+    try testing.expectEqualStrings(P.Root.clarp_options.help.?, l.items);
 }
 
 test "help override all - union" {
     const P = clarp.Parser(struct {
-        pub const help =
+        pub const clarp_options = Options(@This()){
+            .help =
             \\
             \\USAGE: exe <commands>
             \\commands:
@@ -375,20 +379,21 @@ test "help override all - union" {
             \\  foo: string  // foo desc
             \\  bar: string  // bar desc
             \\
-        ;
+            ,
+        };
     }, .{});
     const talloc = std.testing.allocator;
     var l = std.ArrayList(u8).init(talloc);
     defer l.deinit();
     try P.help("exe", .{ .err_writer = l.writer().any() });
-    try testing.expectEqualStrings(P.Root.help, l.items);
+    try testing.expectEqualStrings(P.Root.clarp_options.help.?, l.items);
 }
 
 test "collapse derived short flags" {
     const P = clarp.Parser(struct {
         foo: bool,
         bar: bool,
-        pub const derive_short_names = true;
+        pub const clarp_options = Options(@This()){ .derive_short_names = true };
     }, .{});
 
     const expect = expectFn(P);

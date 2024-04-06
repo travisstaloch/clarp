@@ -177,3 +177,4 @@ Users can manually parse options by providing an `overrides` struct.  If any of 
   - [x] override entire help text
   - [ ] print aligned table - choose min alignment + allow user to override
 - [ ] make README significantly shorter
+- [x] put all options in one place - clarp_options
