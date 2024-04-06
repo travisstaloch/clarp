@@ -298,7 +298,7 @@ test "caseFn" {
     }
 }
 
-test "help override field struct" {
+test "help override field - struct" {
     const P = clarp.Parser(struct {
         foo: []const u8,
         pub const options = Options(@This()){
@@ -322,7 +322,7 @@ test "help override field struct" {
     , l.items);
 }
 
-test "help override field union" {
+test "help override field - union" {
     const P = clarp.Parser(union(enum) {
         foo: []const u8,
         pub const options = Options(@This()){
@@ -394,4 +394,15 @@ test "collapse derived short flags" {
     const expect = expectFn(P);
     try expect(&.{exe_path}, .{ .foo = false, .bar = false });
     try expect(&.{ exe_path, "-fb" }, .{ .foo = true, .bar = true });
+}
+
+test "array" {
+    const P = clarp.Parser(struct {
+        arr: [3]u32,
+    }, .{});
+
+    const expect = expectFn(P);
+    try testing.expectError(error.NotEnoughArgs, P.parse(&.{ exe_path, "--arr", "0", "1" }, .{}));
+    try testing.expectError(error.ExtraArgs, P.parse(&.{ exe_path, "--arr", "0", "1", "2", "3" }, .{}));
+    try expect(&.{ exe_path, "--arr", "0", "1", "2" }, .{ .arr = .{ 0, 1, 2 } });
 }

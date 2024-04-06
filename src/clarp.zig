@@ -210,11 +210,19 @@ pub fn Parser(
                     return error.InvalidEnum;
                 },
                 .Array => |x| {
-                    if (args.*[0].len > x.len) return error.ArrayTooShort;
-                    defer args.* = args.*[1..];
-                    var a: V = undefined;
-                    @memcpy(a[0..args.*[0].len], args.*[0]);
-                    return a;
+                    if (x.child == u8) {
+                        if (args.*[0].len > x.len) return error.ArrayTooShort;
+                        defer args.* = args.*[1..];
+                        var a: V = undefined;
+                        @memcpy(a[0..args.*[0].len], args.*[0]);
+                        return a;
+                    } else {
+                        var a: V = undefined;
+                        for (&a) |*ele| {
+                            ele.* = try parsePayload(args, x.child, field_name, parse_options);
+                        }
+                        return a;
+                    }
                 },
                 .Union => |x| {
                     const Shorts = ShortNames(x.fields);
