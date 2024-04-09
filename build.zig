@@ -13,6 +13,7 @@ pub fn build(b: *std.Build) void {
         .root_source_file = .{ .path = "src/tests.zig" },
         .target = target,
         .optimize = optimize,
+        .filter = b.option([]const u8, "test-filter", "test filter"),
     });
     tests.root_module.addImport("clarp", mod);
     const test_cmd = b.addRunArtifact(tests);

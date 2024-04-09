@@ -167,7 +167,7 @@ pub fn Parser(
         pub fn parsePayload(
             args: *[]const []const u8,
             comptime V: type,
-            field_name: ?[]const u8,
+            comptime field_name: ?[]const u8,
             parse_options: ParseOptions,
         ) !V {
             const info = @typeInfo(V);
@@ -270,179 +270,242 @@ pub fn Parser(
                     try logErr("unknown command '{s}'\n", .{args.*[0]}, parse_options.err_file);
                     return error.UnknownCommand;
                 },
-                .Struct => |x| {
-                    const has_options = @hasDecl(V, "clarp_options");
-                    var payload: V = mem.zeroInit(V, .{});
-                    var fields_seen = std.StaticBitSet(x.fields.len).initEmpty();
+                .Struct => |x| return try parseStruct(args, V, field_name, parse_options, x),
+            }
+        }
 
-                    args: while (args.len > 0 and
-                        (fields_seen.count() < x.fields.len or
-                        (has_options and V.clarp_options.overrides != null)))
-                    {
-                        inline for (x.fields, 0..) |f, i| {
-                            if (fields_seen.isSet(i))
-                                log.debug("{s}: {any}", .{ f.name, @field(payload, f.name) });
-                        }
+        pub fn parseStruct(
+            args: *[]const []const u8,
+            comptime V: type,
+            comptime field_name: ?[]const u8,
+            parse_options: ParseOptions,
+            comptime info: std.builtin.Type.Struct,
+        ) !V {
+            const has_options = @hasDecl(V, "clarp_options");
+            var payload: V = mem.zeroInit(V, .{});
+            var fields_seen = std.StaticBitSet(info.fields.len).initEmpty();
+            const vfields = info.fields;
 
-                        if (field_name != null and
-                            ((has_options and V.clarp_options.end_mark != null) and
-                            mem.eql(u8, args.*[0], V.clarp_options.end_mark.?)) or
-                            (mem.startsWith(u8, args.*[0], "--end-") and
-                            mem.eql(u8, args.*[0][6..], field_name.?)))
-                        {
+            const Short = ShortNames(info.fields);
+            const FieldEnum = std.meta.FieldEnum(V);
+            const kvs = comptime GenKvs(V, Short, FieldEnum, info, has_options, field_name);
+            comptime for (kvs) |kv| {
+                var count: u8 = 0;
+                for (kvs) |kv2| {
+                    count += @intFromBool(mem.eql(u8, kv[0], kv2[0]));
+                    if (count > 1) @compileError("duplicate key '" ++ kv[0] ++ "'");
+                }
+            };
+            const map = std.ComptimeStringMap(NamedOption(FieldEnum), kvs);
+            log.debug("parseStruct() kvs.len {} V {s} fields {} {s}", .{ kvs.len, @typeName(V), info.fields.len, std.meta.fieldNames(V) });
+
+            args: while (args.len > 0 and
+                (fields_seen.count() < info.fields.len or
+                (has_options and V.clarp_options.overrides != null)))
+            {
+                inline for (info.fields, 0..) |f, i| {
+                    if (fields_seen.isSet(i))
+                        log.debug("{s}: {any}", .{ f.name, @field(payload, f.name) });
+                }
+
+                log.debug("args {s}", .{args.*});
+                if (map.get(args.*[0])) |named_option| {
+                    switch (named_option) {
+                        .end_mark => {
+                            log.debug("found end_mark", .{});
                             args.* = args.*[1..];
                             return payload;
-                        }
-
-                        if (has_options and V.clarp_options.overrides != null) {
-                            inline for (comptime std.meta.declarations(V.clarp_options.overrides.?)) |decl| {
-                                if (mem.eql(u8, decl.name, args.*[0])) {
-                                    args.* = args.*[1..];
-                                    const userParseFn: UserParseFn = @field(V.clarp_options.overrides.?, decl.name);
-                                    userParseFn(args, parse_options.user_ctx);
-                                    continue :args;
-                                }
-                            }
-                        }
-
-                        // look for derived short names
-                        if (has_options and
-                            V.clarp_options.derive_short_names and
-                            mem.startsWith(u8, args.*[0], "-"))
-                        {
-                            const vfields = @typeInfo(V).Struct.fields;
-                            const Shorts = ShortNames(vfields);
-                            const mshort = std.meta.stringToEnum(Shorts, args.*[0][1..]);
-                            if (mshort) |short| switch (short) {
+                        },
+                        .override => |override| {
+                            log.debug("found override", .{});
+                            args.* = args.*[1..];
+                            override(args, parse_options.user_ctx);
+                            continue :args;
+                        },
+                        .short, .long, .alias => |fe| if (@typeInfo(FieldEnum).Enum.fields.len > 0) {
+                            switch (fe) {
                                 inline else => |tag| {
-                                    log.debug("found derived short name {s} {s}", .{ args.*[0], @tagName(tag) });
+                                    log.debug("found {s} {s} {s}", .{ @tagName(named_option), args.*[0], @tagName(tag) });
                                     const fi = @intFromEnum(tag);
                                     const Ft = @TypeOf(@field(payload, vfields[fi].name));
                                     args.* = args.*[@intFromBool(!isFlagType(Ft))..];
-                                    @field(payload, vfields[fi].name) =
+                                    @field(payload, @tagName(tag)) =
                                         try parsePayload(args, Ft, vfields[fi].name, parse_options);
                                     fields_seen.set(fi);
                                     continue :args;
                                 },
-                            } else {
-                                // parse shorts with -abc syntax where
-                                // a, b, c are derived short field names
-                                var arg = args.*[0][1..];
-                                log.debug("arg {s} shorts {s}", .{ arg, std.meta.fieldNames(Shorts) });
-                                shorts: while (arg.len > 0) {
-                                    inline for (@typeInfo(Shorts).Enum.fields, 0..) |f, fi| {
-                                        if (isFlagType(vfields[fi].type) and mem.startsWith(u8, arg, f.name)) {
-                                            const Ft = @TypeOf(@field(payload, vfields[fi].name));
-                                            // construct a fake, single flag arg.  this allows bool fields to work
-                                            var tmp_args: []const []const u8 = &[_][]const u8{"--" ++ vfields[fi].name};
-                                            @field(payload, vfields[fi].name) =
-                                                try parsePayload(&tmp_args, Ft, vfields[fi].name, parse_options);
-                                            fields_seen.set(fi);
-                                            arg = arg[f.name.len..];
-                                            continue :shorts;
-                                        }
-                                    } else break;
-                                }
-
-                                if (arg.len == 0) {
-                                    args.* = args.*[1..];
-                                    continue :args;
-                                } else {
-                                    try logErr("unknown short option(s) '{s}'\n", .{arg}, parse_options.err_file);
-                                    return error.UnknownOption;
-                                }
                             }
+                            unreachable;
+                        },
+                    }
+                } else {
+                    if (has_options and
+                        V.clarp_options.derive_short_names and
+                        mem.startsWith(u8, args.*[0], "-"))
+                    {
+                        // parse shorts with -abc syntax where
+                        // a, b, c are derived short field names
+                        var arg = args.*[0][1..];
+                        log.debug("arg {s} shorts {s}", .{ arg, std.meta.fieldNames(Short) });
+                        shorts: while (arg.len > 0) {
+                            inline for (@typeInfo(Short).Enum.fields, 0..) |f, fi| {
+                                if (isFlagType(vfields[fi].type) and mem.startsWith(u8, arg, f.name)) {
+                                    const Ft = @TypeOf(@field(payload, vfields[fi].name));
+                                    // construct a fake, single flag arg.  this allows bool fields to work
+                                    var tmp_args: []const []const u8 = &[_][]const u8{"--" ++ vfields[fi].name};
+                                    @field(payload, vfields[fi].name) =
+                                        try parsePayload(&tmp_args, Ft, vfields[fi].name, parse_options);
+                                    fields_seen.set(fi);
+                                    arg = arg[f.name.len..];
+                                    continue :shorts;
+                                }
+                            } else break;
                         }
 
-                        // look for alias names
-                        if (has_options) {
-                            inline for (@typeInfo(@TypeOf(V.clarp_options.fields)).Struct.fields, 0..) |f, fi| {
-                                const opt: FieldOption = @field(V.clarp_options.fields, f.name);
-                                const alias = opt.alias orelse continue;
-                                if (mem.eql(u8, args.*[0], alias)) {
-                                    log.debug("found alias {s} {s}", .{ args.*[0], f.name });
-                                    const Ft = @TypeOf(@field(payload, f.name));
-                                    args.* = args.*[@intFromBool(!isFlagType(Ft))..];
-                                    @field(payload, f.name) =
-                                        try parsePayload(args, Ft, alias, parse_options);
-                                    fields_seen.set(fi);
-                                    continue :args;
-                                }
-                            }
-                        }
-
-                        // look for long names
-                        log.debug("arg {s}", .{args.*[0]});
-                        const is_long = mem.startsWith(u8, args.*[0], "--");
-                        if (is_long) {
-                            comptime var buflen: u16 = 0;
-                            inline for (x.fields) |f| buflen = @max(buflen, f.name.len);
-                            var buf: [buflen]u8 = undefined;
-                            inline for (x.fields, 0..) |f, fi| {
-                                const fname = options.caseFn(&buf, f.name);
-                                if (mem.eql(u8, args.*[0][2..], fname)) {
-                                    log.debug("found long {s} {s}", .{ args.*[0], fname });
-                                    args.* = args.*[@intFromBool(!isFlagType(f.type))..];
-                                    @field(payload, f.name) = try parsePayload(args, f.type, fname, parse_options);
-                                    fields_seen.set(fi);
-                                    continue :args;
-                                }
-                            }
-                            // error if positional starts with '--'
-                            try logErr("unknown option '{s}'\n", .{args.*[0]}, parse_options.err_file);
+                        if (arg.len == 0) {
+                            args.* = args.*[1..];
+                            continue :args;
+                        } else {
+                            try logErr("unknown short option(s) '{s}'\n", .{arg}, parse_options.err_file);
                             return error.UnknownOption;
                         }
-
-                        // positionals
-                        log.debug("parsing positional. fields seen {} arg {s}", .{ fields_seen.count(), args.*[0] });
-                        var iter = fields_seen.iterator(.{ .kind = .unset });
-                        const next_fieldi = iter.next() orelse {
-                            try logErr("extra args {s}\n", .{args.*}, parse_options.err_file);
-                            return error.ExtraArgs;
-                        };
-                        inline for (x.fields, 0..) |f, fi| {
-                            if (fi == next_fieldi) {
-                                @field(payload, f.name) = try parsePayload(args, f.type, f.name, parse_options);
-                                fields_seen.set(fi);
-                                continue :args;
-                            }
-                        }
-
-                        @panic("unreachable");
                     }
 
-                    // set field default values if provided
-                    inline for (x.fields, 0..) |f, i| {
-                        if (!fields_seen.isSet(i)) {
-                            if (f.default_value) |d| {
-                                fields_seen.set(i);
-                                @field(payload, f.name) = @as(*const f.type, @ptrCast(@alignCast(d))).*;
-                            } else if (comptime isFlagType(f.type)) {
-                                fields_seen.set(i);
-                                @field(payload, f.name) = false;
-                            }
+                    // positionals
+                    log.debug("parsing positional. fields seen {} arg {s}", .{ fields_seen.count(), args.*[0] });
+                    var iter = fields_seen.iterator(.{ .kind = .unset });
+                    const next_fieldi = iter.next() orelse {
+                        try logErr("extra args {s}\n", .{args.*}, parse_options.err_file);
+                        return error.ExtraArgs;
+                    };
+                    inline for (info.fields, 0..) |f, fi| {
+                        if (fi == next_fieldi) {
+                            @field(payload, f.name) = try parsePayload(args, f.type, f.name, parse_options);
+                            fields_seen.set(fi);
+                            continue :args;
                         }
                     }
 
-                    log.debug("fields seen {}/{}", .{ fields_seen.count(), x.fields.len });
-                    const field_names = std.meta.fieldNames(V);
-                    if (field_names.len != 0 and fields_seen.count() != x.fields.len) {
-                        try logErr("missing fields: ", .{}, parse_options.err_file);
-                        var iter = fields_seen.iterator(.{ .kind = .unset });
-                        var i: u32 = 0;
-                        while (iter.next()) |fi| : (i += 1) {
-                            if (i == 0)
-                                try logErr("'{s}'", .{field_names[fi]}, parse_options.err_file)
-                            else
-                                try logErr(", '{s}'", .{field_names[fi]}, parse_options.err_file);
-                        }
-                        try logErr("\n", .{}, parse_options.err_file);
-                        return error.MissingFields;
-                    }
-
-                    return payload;
-                },
+                    @panic("unreachable");
+                }
             }
+
+            // set field default values if provided
+            inline for (info.fields, 0..) |f, i| {
+                if (!fields_seen.isSet(i)) {
+                    if (f.default_value) |d| {
+                        fields_seen.set(i);
+                        @field(payload, f.name) = @as(*const f.type, @ptrCast(@alignCast(d))).*;
+                    } else if (comptime isFlagType(f.type)) {
+                        fields_seen.set(i);
+                        @field(payload, f.name) = false;
+                    }
+                }
+            }
+
+            log.debug("fields seen {}/{}", .{ fields_seen.count(), info.fields.len });
+            const field_names = std.meta.fieldNames(V);
+            if (field_names.len != 0 and fields_seen.count() != info.fields.len) {
+                try logErr("missing fields: ", .{}, parse_options.err_file);
+                var iter = fields_seen.iterator(.{ .kind = .unset });
+                var i: u32 = 0;
+                while (iter.next()) |fi| : (i += 1) {
+                    if (i == 0)
+                        try logErr("'{s}'", .{field_names[fi]}, parse_options.err_file)
+                    else
+                        try logErr(", '{s}'", .{field_names[fi]}, parse_options.err_file);
+                }
+                try logErr("\n", .{}, parse_options.err_file);
+                return error.MissingFields;
+            }
+
+            return payload;
+        }
+
+        /// returns kv pair for each end_mark, override, derived short name, aliase, long name.
+        /// each pair has type struct{[]const u8, NamedOption(FieldEnum)}
+        fn GenKvs(
+            comptime V: type,
+            comptime Short: type,
+            comptime FieldEnum: type,
+            comptime struct_info: std.builtin.Type.Struct,
+            comptime has_options: bool,
+            comptime field_name: ?[]const u8,
+        ) []const Kv(FieldEnum) {
+            comptime {
+                // calculate the buffer size needed
+                const end_mark_len: usize = @intFromBool((has_options and V.clarp_options.end_mark != null) or field_name != null);
+                const overrides_len = if (has_options and V.clarp_options.overrides != null) std.meta.declarations(V.clarp_options.overrides.?).len else 0;
+                const shorts_len = if (has_options and V.clarp_options.derive_short_names) struct_info.fields.len else 0;
+                var aliases_len: usize = 0;
+                for (std.meta.tags(FieldEnum)) |tag| {
+                    if (has_options and @field(V.clarp_options.fields, @tagName(tag)).alias != null) {
+                        aliases_len += 1;
+                    }
+                }
+                const kv_len: usize = end_mark_len + overrides_len +
+                    shorts_len + aliases_len + struct_info.fields.len;
+
+                // assign kvs
+                var kvs: [kv_len]Kv(FieldEnum) = undefined;
+                var kvidx: usize = 0;
+                if (has_options and V.clarp_options.end_mark != null) {
+                    kvs[kvidx] = .{ V.clarp_options.end_mark.?, .end_mark };
+                    kvidx += 1;
+                } else if (field_name != null) {
+                    kvs[kvidx] = .{ "--end-".* ++ field_name.?, .end_mark };
+                    kvidx += 1;
+                }
+
+                if (has_options) {
+                    if (V.clarp_options.overrides) |overrides| {
+                        for (std.meta.declarations(overrides)) |decl| {
+                            kvs[kvidx] = .{ decl.name, .{
+                                .override = @field(V.clarp_options.overrides.?, decl.name),
+                            } };
+                            kvidx += 1;
+                        }
+                    }
+                    if (V.clarp_options.derive_short_names) {
+                        for (std.meta.tags(Short), 0..) |tag, j| {
+                            const fe = std.meta.tags(FieldEnum)[j];
+                            kvs[kvidx] = .{ "-" ++ @tagName(tag), .{ .short = fe } };
+                            kvidx += 1;
+                        }
+                    }
+                }
+
+                for (std.meta.tags(FieldEnum)) |tag| {
+                    const tagname = @tagName(tag);
+                    var buf: [tagname.len]u8 = undefined;
+                    const fname = options.caseFn(&buf, tagname);
+                    kvs[kvidx] = .{ "--" ++ fname, .{ .long = tag } };
+                    kvidx += 1;
+                    if (has_options and @field(V.clarp_options.fields, @tagName(tag)).alias != null) {
+                        kvs[kvidx] = .{ @field(V.clarp_options.fields, @tagName(tag)).alias.?, .{ .alias = tag } };
+                        kvidx += 1;
+                    }
+                }
+                std.debug.assert(kv_len == kvidx);
+                const ret = &kvs;
+                return ret;
+            }
+        }
+
+        const Override = *const fn (*[]const []const u8, ?*anyopaque) void;
+
+        fn NamedOption(comptime FieldEnum: type) type {
+            return union(enum) {
+                override: Override,
+                end_mark,
+                alias: FieldEnum,
+                short: FieldEnum,
+                long: FieldEnum,
+            };
+        }
+
+        fn Kv(comptime FieldEnum: type) type {
+            comptime return struct { []const u8, NamedOption(FieldEnum) };
         }
 
         /// when `fmt` is "help", calls help()
@@ -604,7 +667,8 @@ pub fn Parser(
                                 continue;
                             }
                         }
-                        try writer.writeAll(options.caseFn(&buf, f.name));
+                        const fname = options.caseFn(&buf, f.name);
+                        try writer.writeAll(fname);
                         try printShort(V, x.fields, writer, fi);
                         try printAlias(V, writer, f);
                         try printHelp(f.type, fmt, fmt_opts, writer, depth + 1);

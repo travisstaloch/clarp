@@ -266,20 +266,35 @@ test "derive_short_names union" {
 }
 
 test "struct end mark" {
-    const P = clarp.Parser(struct {
-        a: struct {
-            b: u8 = 1,
-            pub const clarp_options = Options(@This()){ .end_mark = "--my-end-a-mark" };
-        } = .{},
-        b: u8 = 2,
-    }, .{});
-    const expect = expectFn(P);
-    try expect(
-        &.{ exe_path, "--a", "--b", "20", "--b", "30" },
-        .{ .a = .{ .b = 20 }, .b = 30 },
-    );
-    try expect(&.{ exe_path, "--a", "--end-a", "--b", "20" }, .{ .b = 20 });
-    try expect(&.{ exe_path, "--a", "--my-end-a-mark", "--b", "20" }, .{ .b = 20 });
+    {
+        const P = clarp.Parser(struct {
+            a: struct {
+                b: u8 = 1,
+            } = .{},
+            b: u8 = 2,
+        }, .{});
+        const expect = expectFn(P);
+        try expect(
+            &.{ exe_path, "--a", "--b", "20", "--b", "30" },
+            .{ .a = .{ .b = 20 }, .b = 30 },
+        );
+        try expect(&.{ exe_path, "--a", "--end-a", "--b", "20" }, .{ .b = 20 });
+    }
+    {
+        const P = clarp.Parser(struct {
+            a: struct {
+                b: u8 = 1,
+                pub const clarp_options = Options(@This()){ .end_mark = "--my-end-a-mark" };
+            } = .{},
+            b: u8 = 2,
+        }, .{});
+        const expect = expectFn(P);
+        try expect(
+            &.{ exe_path, "--a", "--b", "20", "--b", "30" },
+            .{ .a = .{ .b = 20 }, .b = 30 },
+        );
+        try expect(&.{ exe_path, "--a", "--my-end-a-mark", "--b", "20" }, .{ .b = 20 });
+    }
 }
 
 test "caseFn" {

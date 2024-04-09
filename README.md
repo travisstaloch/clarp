@@ -163,9 +163,10 @@ Users can manually parse options by providing an `overrides` struct.  If any of 
 
 # Todo
 - [ ] document commands
-- [ ] validate aliases don't collide
+- [x] validate that all options don't collide
+  - [x] use comptime string map of all possible options and compile error if duplicate keys are found.
+  - [ ] do same for unions/commands
 - [x] add Option to derive shorts
-  - [ ] validate shorts and aliases don't collide
 - [ ] add colors to help output
 - [x] support 'end of sequence' marker. default '--end-field_name'
   - [x] allow user to override via struct `pub const end_mark = "--foo"`
