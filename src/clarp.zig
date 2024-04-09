@@ -54,10 +54,6 @@ pub const ParseOptions = struct {
     err_file: ?std.fs.File = null,
 };
 
-pub const HelpOptions = struct {
-    err_writer: ?std.io.AnyWriter = null,
-};
-
 fn logErr(comptime fmt: anytype, args: anytype, file: ?std.fs.File) !void {
     if (@import("builtin").is_test) return;
     const writer = (file orelse return).writer();
@@ -116,7 +112,7 @@ pub fn Parser(
             if (rest.len != 0) {
                 if (std.meta.stringToEnum(options.help_flags, rest[0])) |_| {
                     const err_file = parse_options.err_file orelse std.io.getStdErr();
-                    try help(args[0], .{ .err_writer = err_file.writer().any() });
+                    try help(args[0], err_file.writer().any());
                     return error.HelpShown;
                 }
             }
@@ -519,7 +515,7 @@ pub fn Parser(
             if (fmt.len == 0)
                 try dump(self.root, fmt, fmt_opts, writer, 0)
             else if (comptime mem.eql(u8, fmt, "help")) {
-                try help(self.exe_path, .{ .err_writer = writer });
+                try help(self.exe_path, writer);
             } else @compileError("unknown fmt '" ++ fmt ++ "'");
         }
 
@@ -565,8 +561,7 @@ pub fn Parser(
             }
         }
 
-        pub fn help(exe_path: []const u8, help_options: HelpOptions) !void {
-            const writer = help_options.err_writer orelse std.io.getStdErr().writer().any();
+        pub fn help(exe_path: []const u8, writer: std.io.AnyWriter) !void {
             const has_help = @hasDecl(T, "clarp_options") and T.clarp_options.help != null;
             if (!has_help) {
                 options.printUsage(writer, options.usage_fmt, std.fs.path.basename(exe_path));

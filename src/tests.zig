@@ -226,7 +226,7 @@ pub fn main() !void {
     }) catch |e| switch (e) {
         error.HelpShown => return,
         else => {
-            try SimpleOptions.help(args[0], .{});
+            try SimpleOptions.help(args[0], std.io.getStdErr().writer().any());
             return e;
         },
     };
@@ -328,7 +328,7 @@ test "help override field - struct" {
     const talloc = std.testing.allocator;
     var l = std.ArrayList(u8).init(talloc);
     defer l.deinit();
-    try P.help("exe", .{ .err_writer = l.writer().any() });
+    try P.help("exe", l.writer().any());
     try testing.expectEqualStrings(
         \\
         \\USAGE: exe <command> <options>...
@@ -352,7 +352,7 @@ test "help override field - union" {
     const talloc = std.testing.allocator;
     var l = std.ArrayList(u8).init(talloc);
     defer l.deinit();
-    try P.help("exe", .{ .err_writer = l.writer().any() });
+    try P.help("exe", l.writer().any());
     try testing.expectEqualStrings(
         \\
         \\USAGE: exe <command> <options>...
@@ -381,7 +381,7 @@ test "help override all - struct" {
     const talloc = std.testing.allocator;
     var l = std.ArrayList(u8).init(talloc);
     defer l.deinit();
-    try P.help("exe", .{ .err_writer = l.writer().any() });
+    try P.help("exe", l.writer().any());
     try testing.expectEqualStrings(P.Root.clarp_options.help.?, l.items);
 }
 
@@ -402,7 +402,7 @@ test "help override all - union" {
     const talloc = std.testing.allocator;
     var l = std.ArrayList(u8).init(talloc);
     defer l.deinit();
-    try P.help("exe", .{ .err_writer = l.writer().any() });
+    try P.help("exe", l.writer().any());
     try testing.expectEqualStrings(P.Root.clarp_options.help.?, l.items);
 }
 
