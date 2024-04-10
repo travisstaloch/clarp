@@ -428,3 +428,18 @@ test "array" {
     try testing.expectError(error.ExtraArgs, P.parse(&.{ exe_path, "--arr", "0", "1", "2", "3" }, .{}));
     try expect(&.{ exe_path, "--arr", "0", "1", "2" }, .{ .arr = .{ 0, 1, 2 } });
 }
+
+test "derived shorts + aliases" {
+    const P = clarp.Parser(struct {
+        aaa: u8,
+        pub const clarp_options = Options(@This()){
+            .fields = .{ .aaa = .{ .alias = "-aa" } },
+            .derive_short_names = true,
+        };
+    }, .{});
+
+    try testing.expectError(error.UnknownOption, P.parse(&.{ exe_path, "-a", "1" }, .{}));
+    const expect = expectFn(P);
+    try expect(&.{ exe_path, "-aa", "1" }, .{ .aaa = 1 });
+    try expect(&.{ exe_path, "--aaa", "1" }, .{ .aaa = 1 });
+}

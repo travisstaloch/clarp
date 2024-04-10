@@ -184,3 +184,7 @@ Users can manually parse options by providing an `overrides` struct.  If any of 
   - [ ] print aligned table - choose min alignment + allow user to override
 - [ ] make README significantly shorter
 - [x] put all options in one place - clarp_options
+- [ ] should always be max 2 options, a long and optional short. 
+  - [x] derived shorts use alias if exists
+- [ ] support existing types which users don't have control over
+  - [ ] add parseWithOptions(T, ClarpOptions)

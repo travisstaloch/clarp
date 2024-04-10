@@ -72,6 +72,17 @@ pub fn caseKebab(buf: []u8, name: []const u8) []const u8 {
     return buf[0..name.len];
 }
 
+pub const ParserOptions = struct {
+    help_flags: type = HelpFlags,
+    usage_fmt: []const u8 = default_usage_fmt,
+    printUsage: fn (
+        writer: std.io.AnyWriter,
+        comptime fmt: []const u8,
+        exe_path: []const u8,
+    ) void = defaultPrintUsage,
+    caseFn: CaseFn = caseSame,
+};
+
 ///
 /// union types describe alternatives.  their field names don't require any
 /// leading dashes and correspond to commands.
@@ -84,19 +95,7 @@ pub fn caseKebab(buf: []u8, name: []const u8) []const u8 {
 ///
 /// bool types are flags may be specified as --flag (or true/false when unnamed)
 /// and they implicitly default to false.
-pub fn Parser(
-    comptime T: type,
-    comptime options: struct {
-        help_flags: type = HelpFlags,
-        usage_fmt: []const u8 = default_usage_fmt,
-        printUsage: fn (
-            writer: std.io.AnyWriter,
-            comptime fmt: []const u8,
-            exe_path: []const u8,
-        ) void = defaultPrintUsage,
-        caseFn: CaseFn = caseSame,
-    },
-) type {
+pub fn Parser(comptime T: type, comptime options: ParserOptions) type {
     return struct {
         root: Root,
         exe_path: []const u8,
@@ -266,7 +265,7 @@ pub fn Parser(
                     try logErr("unknown command '{s}'\n", .{args.*[0]}, parse_options.err_file);
                     return error.UnknownCommand;
                 },
-                .Struct => |x| return try parseStruct(args, V, field_name, parse_options, x),
+                .Struct => |x| return try parseStruct(args, V, field_name, parse_options, x, if (@hasDecl(V, "clarp_options")) V.clarp_options else .{}),
             }
         }
 
@@ -276,15 +275,16 @@ pub fn Parser(
             comptime field_name: ?[]const u8,
             parse_options: ParseOptions,
             comptime info: std.builtin.Type.Struct,
+            comptime clarp_options: Options(V),
         ) !V {
-            const has_options = @hasDecl(V, "clarp_options");
+            // const has_options = @hasDecl(V, "clarp_options");
             var payload: V = mem.zeroInit(V, .{});
             var fields_seen = std.StaticBitSet(info.fields.len).initEmpty();
             const vfields = info.fields;
 
             const Short = ShortNames(info.fields);
             const FieldEnum = std.meta.FieldEnum(V);
-            const kvs = comptime GenKvs(V, Short, FieldEnum, info, has_options, field_name);
+            const kvs = comptime GenKvs(V, Short, FieldEnum, info, clarp_options, field_name);
             comptime for (kvs) |kv| {
                 var count: u8 = 0;
                 for (kvs) |kv2| {
@@ -297,7 +297,7 @@ pub fn Parser(
 
             args: while (args.len > 0 and
                 (fields_seen.count() < info.fields.len or
-                (has_options and V.clarp_options.overrides != null)))
+                clarp_options.overrides != null))
             {
                 inline for (info.fields, 0..) |f, i| {
                     if (fields_seen.isSet(i))
@@ -335,8 +335,7 @@ pub fn Parser(
                         },
                     }
                 } else {
-                    if (has_options and
-                        V.clarp_options.derive_short_names and
+                    if (clarp_options.derive_short_names and
                         mem.startsWith(u8, args.*[0], "-"))
                     {
                         // parse shorts with -abc syntax where
@@ -425,17 +424,23 @@ pub fn Parser(
             comptime Short: type,
             comptime FieldEnum: type,
             comptime struct_info: std.builtin.Type.Struct,
-            comptime has_options: bool,
+            comptime clarp_options: Options(V),
             comptime field_name: ?[]const u8,
         ) []const Kv(FieldEnum) {
             comptime {
                 // calculate the buffer size needed
-                const end_mark_len: usize = @intFromBool((has_options and V.clarp_options.end_mark != null) or field_name != null);
-                const overrides_len = if (has_options and V.clarp_options.overrides != null) std.meta.declarations(V.clarp_options.overrides.?).len else 0;
-                const shorts_len = if (has_options and V.clarp_options.derive_short_names) struct_info.fields.len else 0;
+                const end_mark_len: usize = @intFromBool(clarp_options.end_mark != null or field_name != null);
+                const overrides_len = if (clarp_options.overrides != null) std.meta.declarations(clarp_options.overrides.?).len else 0;
+                var shorts_len: usize = 0;
+                if (clarp_options.derive_short_names) {
+                    for (std.meta.tags(FieldEnum)) |tag| {
+                        if (@field(V.clarp_options.fields, @tagName(tag)).alias != null) continue;
+                        shorts_len += 1;
+                    }
+                }
                 var aliases_len: usize = 0;
                 for (std.meta.tags(FieldEnum)) |tag| {
-                    if (has_options and @field(V.clarp_options.fields, @tagName(tag)).alias != null) {
+                    if (@field(clarp_options.fields, @tagName(tag)).alias != null) {
                         aliases_len += 1;
                     }
                 }
@@ -445,29 +450,28 @@ pub fn Parser(
                 // assign kvs
                 var kvs: [kv_len]Kv(FieldEnum) = undefined;
                 var kvidx: usize = 0;
-                if (has_options and V.clarp_options.end_mark != null) {
-                    kvs[kvidx] = .{ V.clarp_options.end_mark.?, .end_mark };
+                if (clarp_options.end_mark != null) {
+                    kvs[kvidx] = .{ clarp_options.end_mark.?, .end_mark };
                     kvidx += 1;
                 } else if (field_name != null) {
                     kvs[kvidx] = .{ "--end-".* ++ field_name.?, .end_mark };
                     kvidx += 1;
                 }
 
-                if (has_options) {
-                    if (V.clarp_options.overrides) |overrides| {
-                        for (std.meta.declarations(overrides)) |decl| {
-                            kvs[kvidx] = .{ decl.name, .{
-                                .override = @field(V.clarp_options.overrides.?, decl.name),
-                            } };
-                            kvidx += 1;
-                        }
+                if (clarp_options.overrides) |overrides| {
+                    for (std.meta.declarations(overrides)) |decl| {
+                        kvs[kvidx] = .{ decl.name, .{
+                            .override = @field(clarp_options.overrides.?, decl.name),
+                        } };
+                        kvidx += 1;
                     }
-                    if (V.clarp_options.derive_short_names) {
-                        for (std.meta.tags(Short), 0..) |tag, j| {
-                            const fe = std.meta.tags(FieldEnum)[j];
-                            kvs[kvidx] = .{ "-" ++ @tagName(tag), .{ .short = fe } };
-                            kvidx += 1;
-                        }
+                }
+                if (clarp_options.derive_short_names) {
+                    for (std.meta.tags(Short), 0..) |tag, j| {
+                        const fe = std.meta.tags(FieldEnum)[j];
+                        if (@field(clarp_options.fields, @tagName(fe)).alias != null) continue;
+                        kvs[kvidx] = .{ "-" ++ @tagName(tag), .{ .short = fe } };
+                        kvidx += 1;
                     }
                 }
 
@@ -477,8 +481,8 @@ pub fn Parser(
                     const fname = options.caseFn(&buf, tagname);
                     kvs[kvidx] = .{ "--" ++ fname, .{ .long = tag } };
                     kvidx += 1;
-                    if (has_options and @field(V.clarp_options.fields, @tagName(tag)).alias != null) {
-                        kvs[kvidx] = .{ @field(V.clarp_options.fields, @tagName(tag)).alias.?, .{ .alias = tag } };
+                    if (@field(clarp_options.fields, @tagName(tag)).alias != null) {
+                        kvs[kvidx] = .{ @field(clarp_options.fields, @tagName(tag)).alias.?, .{ .alias = tag } };
                         kvidx += 1;
                     }
                 }
