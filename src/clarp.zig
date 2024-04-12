@@ -755,8 +755,7 @@ pub fn Parser(comptime T: type, comptime options: ParserOptions) type {
                             const name = options.caseFn(&buf, f.name);
                             try writer.writeAll(name);
                         }
-                        try printDerivedShort(V, x.fields, writer, fi);
-                        try printShort(V, writer, f);
+                        try printShort(V, x.fields, writer, fi);
                         try printHelp(f.type, fmt, fmt_opts, writer, depth + 1);
                         if (f.default_value) |d| {
                             const dv = @as(*const f.type, @ptrCast(@alignCast(d))).*;
@@ -792,8 +791,7 @@ pub fn Parser(comptime T: type, comptime options: ParserOptions) type {
                         }
                         const fname = options.caseFn(&buf, f.name);
                         try writer.writeAll(fname);
-                        try printDerivedShort(V, x.fields, writer, fi);
-                        try printShort(V, writer, f);
+                        try printShort(V, x.fields, writer, fi);
                         try printHelp(f.type, fmt, fmt_opts, writer, depth + 1);
                         try printDesc(V, writer, f);
                     }
@@ -801,21 +799,22 @@ pub fn Parser(comptime T: type, comptime options: ParserOptions) type {
             }
         }
 
-        fn printShort(comptime V: type, writer: anytype, field: anytype) !void {
+        fn printShort(comptime V: type, comptime vfields: anytype, writer: anytype, comptime fieldi: usize) !void {
+            const field = vfields[fieldi];
             if (@hasDecl(V, "clarp_options")) {
                 const opt: FieldOption = @field(V.clarp_options.fields, field.name);
-                if (opt.short) |short| try writer.print(" {s}", .{short});
-            }
-        }
-
-        fn printDerivedShort(comptime V: type, comptime vfields: anytype, writer: anytype, comptime fieldi: usize) !void {
-            if (@hasDecl(V, "clarp_options") and V.clarp_options.derive_short_names) {
-                const short = @typeInfo(ShortNames(vfields)).Enum.fields[fieldi];
-                const info = @typeInfo(V);
-                switch (info) {
-                    .Struct => try writer.print(" -{s}", .{short.name}),
-                    .Union => try writer.print(" {s}", .{short.name}),
-                    else => unreachable,
+                if (opt.short) |short| {
+                    try writer.print(" {s}", .{short});
+                    return;
+                }
+                if (V.clarp_options.derive_short_names) {
+                    const short = @typeInfo(ShortNames(vfields)).Enum.fields[fieldi];
+                    const info = @typeInfo(V);
+                    switch (info) {
+                        .Struct => try writer.print(" -{s}", .{short.name}),
+                        .Union => try writer.print(" {s}", .{short.name}),
+                        else => unreachable,
+                    }
                 }
             }
         }

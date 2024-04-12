@@ -166,7 +166,7 @@ Users can manually parse options by providing an `overrides` struct.  If any of 
 - [ ] document commands
 - [x] validate that all options don't collide
   - [x] use comptime string map of all possible options and compile error if duplicate keys are found.
-  - [ ] do same for unions/commands
+  - [x] do same for unions/commands
 - [x] add Option to derive shorts
 - [ ] add colors to help output
 - [x] support 'end of sequence' marker. default '--end-field_name'
@@ -185,8 +185,8 @@ Users can manually parse options by providing an `overrides` struct.  If any of 
   - [ ] print aligned table - choose min alignment + allow user to override
 - [ ] make README significantly shorter
 - [x] put all options in one place - clarp_options
-- [ ] should always be max 2 options, a long and optional short. 
-  - [x] derived shorts use short if exists
+- [x] should always be max 2 options, a long and optional short. 
+  - [x] derived shorts use FieldOption.short if exists
 - [x] support parsing types which users don't have control over
   - [x] add parseWithOptions(T, ClarpOptions)
 - [x] rename fields - FieldOption.long

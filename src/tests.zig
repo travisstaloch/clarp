@@ -66,6 +66,7 @@ fn expectFn(comptime P: type) ExpectFn(P) {
 }
 
 const testing = std.testing;
+const talloc = testing.allocator;
 test "Command" {
     try testing.expectError(error.UnknownCommand, TestParser.parse(&.{ "exe", "asfd" }, .{}));
     try testing.expectError(error.ExtraArgs, TestParser.parse(&.{ "exe", "decode", "1", "2", "3" }, .{}));
@@ -206,6 +207,7 @@ const SimpleOptions = clarp.Parser(struct {
                 .desc = "first option description",
             },
         },
+        .derive_short_names = true,
     };
 }, .{ .usage_fmt = "\nUSAGE: $ {s} <options>...\n\noptions:" });
 const exe_path = "/path/to/exe";
@@ -324,7 +326,6 @@ test "help override field - struct" {
             },
         };
     }, .{});
-    const talloc = std.testing.allocator;
     var l = std.ArrayList(u8).init(talloc);
     defer l.deinit();
     try P.help("exe", l.writer().any());
@@ -348,7 +349,6 @@ test "help override field - union" {
             },
         };
     }, .{});
-    const talloc = std.testing.allocator;
     var l = std.ArrayList(u8).init(talloc);
     defer l.deinit();
     try P.help("exe", l.writer().any());
@@ -377,7 +377,7 @@ test "help override all - struct" {
             ,
         };
     }, .{});
-    const talloc = std.testing.allocator;
+
     var l = std.ArrayList(u8).init(talloc);
     defer l.deinit();
     try P.help("exe", l.writer().any());
@@ -398,7 +398,6 @@ test "help override all - union" {
             ,
         };
     }, .{});
-    const talloc = std.testing.allocator;
     var l = std.ArrayList(u8).init(talloc);
     defer l.deinit();
     try P.help("exe", l.writer().any());
@@ -487,4 +486,21 @@ test "rename long - union" {
     try testing.expectError(error.UnknownCommand, P.parse(&.{ exe_path, "foo", "1" }, .{}));
     const expect = expectFn(P);
     try expect(&.{ exe_path, "bar", "1" }, .{ .foo = 1 });
+}
+
+test "printHelp" {
+    var l = std.ArrayList(u8).init(talloc);
+    defer l.deinit();
+    try SimpleOptions.help(exe_path, l.writer().any());
+    try testing.expectEqualStrings(
+        \\
+        \\USAGE: $ exe <options>...
+        \\
+        \\options:
+        \\  help --help -h // show this message. must be first argument.
+        \\  --opt1 -o1: string // first option description
+        \\  --opt2 -op: enum { a, b } = a
+        \\
+        \\
+    , l.items);
 }
