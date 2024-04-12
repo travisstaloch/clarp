@@ -17,6 +17,7 @@ Create command line parsers from zig unions and structs.
 * dump parsed results
   * from any print() method: `std.debug.print("{}", .{parse_result});`
 * derive short names
+* create parsers from types you don't control
 
 # Overview
 Union types create alternative commands.  Commands match field names exactly.
@@ -186,5 +187,6 @@ Users can manually parse options by providing an `overrides` struct.  If any of 
 - [x] put all options in one place - clarp_options
 - [ ] should always be max 2 options, a long and optional short. 
   - [x] derived shorts use alias if exists
-- [ ] support existing types which users don't have control over
-  - [ ] add parseWithOptions(T, ClarpOptions)
+- [x] support parsing types which users don't have control over
+  - [x] add parseWithOptions(T, ClarpOptions)
+- [ ] rename fields

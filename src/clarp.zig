@@ -17,10 +17,11 @@ pub const FieldOption = struct {
 };
 
 pub fn Options(comptime T: type) type {
+    const is_container = isContainer(T);
     return struct {
         /// field options.  a struct of optional `FieldOption` with field names
         /// matching the parent struct.
-        fields: Fields = .{},
+        fields: Fields = if (is_container) .{} else {},
         /// help text override for the entrire struct
         help: ?[]const u8 = null,
         /// when found, denotes end of input for this struct.  any further
@@ -36,8 +37,23 @@ pub fn Options(comptime T: type) type {
         /// '--foo' option.
         overrides: ?type = null,
 
-        const Fields = std.enums.EnumFieldStruct(std.meta.FieldEnum(T), FieldOption, .{});
+        const Fields = if (is_container)
+            std.enums.EnumFieldStruct(std.meta.FieldEnum(T), FieldOption, .{})
+        else
+            void;
     };
+}
+
+fn isContainer(comptime T: type) bool {
+    const info = @typeInfo(T);
+    return info == .Struct or info == .Union or info == .Opaque;
+}
+
+fn clarpOptions(comptime T: type) Options(T) {
+    return if (isContainer(T) and @hasDecl(T, "clarp_options"))
+        T.clarp_options
+    else
+        .{};
 }
 
 /// default flags for showing help/usage
@@ -72,6 +88,7 @@ pub fn caseKebab(buf: []u8, name: []const u8) []const u8 {
     return buf[0..name.len];
 }
 
+/// global options
 pub const ParserOptions = struct {
     help_flags: type = HelpFlags,
     usage_fmt: []const u8 = default_usage_fmt,
@@ -105,7 +122,11 @@ pub fn Parser(comptime T: type, comptime options: ParserOptions) type {
         pub const Root = T;
 
         /// parse command line args
-        pub fn parse(args: []const []const u8, parse_options: ParseOptions) !Self {
+        pub fn parseWithOptions(
+            args: []const []const u8,
+            parse_options: ParseOptions,
+            clarp_options: Options(T),
+        ) !Self {
             // log.debug("args[1] {s}", .{args[1]});
             var rest = args[1..];
             if (rest.len != 0) {
@@ -115,7 +136,7 @@ pub fn Parser(comptime T: type, comptime options: ParserOptions) type {
                     return error.HelpShown;
                 }
             }
-            const root = parsePayload(&rest, T, null, parse_options) catch |e| {
+            const root = parsePayload(&rest, T, null, parse_options, clarp_options) catch |e| {
                 const err_file = parse_options.err_file orelse std.io.getStdErr();
                 try printError(err_file, args, rest);
                 return e;
@@ -126,37 +147,8 @@ pub fn Parser(comptime T: type, comptime options: ParserOptions) type {
                 .{ .root = root, .exe_path = args[0] };
         }
 
-        fn printError(f: std.fs.File, args: []const []const u8, rest: []const []const u8) !void {
-            if (@import("builtin").is_test) return;
-            const writer = f.writer();
-            // count bytes written for error formatting
-            var cw = std.io.countingWriter(writer);
-            const cwriter = cw.writer();
-            try std.io.tty.detectConfig(f).setColor(f, .bright_red);
-            try cwriter.writeAll("error");
-            try std.io.tty.detectConfig(f).setColor(f, .reset);
-            const err_pos = args.len - rest.len;
-            try cwriter.print(" at argument {}: ", .{err_pos});
-            // stop counting bytes at err_pos
-            var w = cwriter.any();
-            for (args[1..], 1..) |arg, i| {
-                if (i != 1) try w.writeAll(" ");
-                if (i >= err_pos) w = writer.any();
-                const has_space = mem.indexOfScalar(u8, arg, ' ') != null;
-                if (has_space) try w.writeByte('\'');
-                try w.writeAll(arg);
-                if (has_space) try w.writeByte('\'');
-            }
-            try writer.writeByte('\n');
-            for (0..cw.bytes_written) |_| try writer.writeAll(" ");
-            // colored pointer and squiggles
-            try std.io.tty.detectConfig(f).setColor(f, .bright_yellow);
-            try writer.writeAll("^");
-            try std.io.tty.detectConfig(f).setColor(f, .yellow);
-            if (err_pos < args.len)
-                for (0..args[err_pos].len -| 1) |_| try writer.writeAll("~");
-            try std.io.tty.detectConfig(f).setColor(f, .reset);
-            try writer.writeAll("\n");
+        pub fn parse(args: []const []const u8, parse_options: ParseOptions) !Self {
+            return parseWithOptions(args, parse_options, clarpOptions(T));
         }
 
         pub fn parsePayload(
@@ -164,6 +156,7 @@ pub fn Parser(comptime T: type, comptime options: ParserOptions) type {
             comptime V: type,
             comptime field_name: ?[]const u8,
             parse_options: ParseOptions,
+            comptime clarp_options: Options(V),
         ) !V {
             const info = @typeInfo(V);
             log.debug(
@@ -219,7 +212,13 @@ pub fn Parser(comptime T: type, comptime options: ParserOptions) type {
                 .Optional => |x| if (mem.eql(u8, args.*[0], "null")) {
                     args.* = args.*[1..];
                     return null;
-                } else return try parsePayload(args, x.child, field_name, parse_options),
+                } else return try parsePayload(
+                    args,
+                    x.child,
+                    field_name,
+                    parse_options,
+                    clarpOptions(x.child),
+                ),
                 .Enum => if (std.meta.stringToEnum(V, args.*[0])) |e| {
                     args.* = args.*[1..];
                     return e;
@@ -237,7 +236,13 @@ pub fn Parser(comptime T: type, comptime options: ParserOptions) type {
                     } else {
                         var a: V = undefined;
                         for (&a) |*ele| {
-                            ele.* = try parsePayload(args, x.child, field_name, parse_options);
+                            ele.* = try parsePayload(
+                                args,
+                                x.child,
+                                field_name,
+                                parse_options,
+                                clarpOptions(x.child),
+                            );
                         }
                         return a;
                     }
@@ -258,6 +263,7 @@ pub fn Parser(comptime T: type, comptime options: ParserOptions) type {
                                 uf.type,
                                 uf.name,
                                 parse_options,
+                                clarpOptions(uf.type),
                             ));
                         }
                     }
@@ -265,7 +271,14 @@ pub fn Parser(comptime T: type, comptime options: ParserOptions) type {
                     try logErr("unknown command '{s}'\n", .{args.*[0]}, parse_options.err_file);
                     return error.UnknownCommand;
                 },
-                .Struct => |x| return try parseStruct(args, V, field_name, parse_options, x, if (@hasDecl(V, "clarp_options")) V.clarp_options else .{}),
+                .Struct => |x| return try parseStruct(
+                    args,
+                    V,
+                    field_name,
+                    parse_options,
+                    x,
+                    if (@hasDecl(V, "clarp_options")) V.clarp_options else clarp_options,
+                ),
             }
         }
 
@@ -326,7 +339,13 @@ pub fn Parser(comptime T: type, comptime options: ParserOptions) type {
                                     const Ft = @TypeOf(@field(payload, vfields[fi].name));
                                     args.* = args.*[@intFromBool(!isFlagType(Ft))..];
                                     @field(payload, @tagName(tag)) =
-                                        try parsePayload(args, Ft, vfields[fi].name, parse_options);
+                                        try parsePayload(
+                                        args,
+                                        Ft,
+                                        vfields[fi].name,
+                                        parse_options,
+                                        clarpOptions(Ft),
+                                    );
                                     fields_seen.set(fi);
                                     continue :args;
                                 },
@@ -349,7 +368,13 @@ pub fn Parser(comptime T: type, comptime options: ParserOptions) type {
                                     // construct a fake, single flag arg.  this allows bool fields to work
                                     var tmp_args: []const []const u8 = &[_][]const u8{"--" ++ vfields[fi].name};
                                     @field(payload, vfields[fi].name) =
-                                        try parsePayload(&tmp_args, Ft, vfields[fi].name, parse_options);
+                                        try parsePayload(
+                                        &tmp_args,
+                                        Ft,
+                                        vfields[fi].name,
+                                        parse_options,
+                                        clarpOptions(vfields[fi].type),
+                                    );
                                     fields_seen.set(fi);
                                     arg = arg[f.name.len..];
                                     continue :shorts;
@@ -375,7 +400,13 @@ pub fn Parser(comptime T: type, comptime options: ParserOptions) type {
                     };
                     inline for (info.fields, 0..) |f, fi| {
                         if (fi == next_fieldi) {
-                            @field(payload, f.name) = try parsePayload(args, f.type, f.name, parse_options);
+                            @field(payload, f.name) = try parsePayload(
+                                args,
+                                f.type,
+                                f.name,
+                                parse_options,
+                                clarpOptions(f.type),
+                            );
                             fields_seen.set(fi);
                             continue :args;
                         }
@@ -434,7 +465,7 @@ pub fn Parser(comptime T: type, comptime options: ParserOptions) type {
                 var shorts_len: usize = 0;
                 if (clarp_options.derive_short_names) {
                     for (std.meta.tags(FieldEnum)) |tag| {
-                        if (@field(V.clarp_options.fields, @tagName(tag)).alias != null) continue;
+                        if (@field(clarp_options.fields, @tagName(tag)).alias != null) continue;
                         shorts_len += 1;
                     }
                 }
@@ -506,6 +537,39 @@ pub fn Parser(comptime T: type, comptime options: ParserOptions) type {
 
         fn Kv(comptime FieldEnum: type) type {
             comptime return struct { []const u8, NamedOption(FieldEnum) };
+        }
+
+        fn printError(f: std.fs.File, args: []const []const u8, rest: []const []const u8) !void {
+            if (@import("builtin").is_test) return;
+            const writer = f.writer();
+            // count bytes written for error formatting
+            var cw = std.io.countingWriter(writer);
+            const cwriter = cw.writer();
+            try std.io.tty.detectConfig(f).setColor(f, .bright_red);
+            try cwriter.writeAll("error");
+            try std.io.tty.detectConfig(f).setColor(f, .reset);
+            const err_pos = args.len - rest.len;
+            try cwriter.print(" at argument {}: ", .{err_pos});
+            // stop counting bytes at err_pos
+            var w = cwriter.any();
+            for (args[1..], 1..) |arg, i| {
+                if (i != 1) try w.writeAll(" ");
+                if (i >= err_pos) w = writer.any();
+                const has_space = mem.indexOfScalar(u8, arg, ' ') != null;
+                if (has_space) try w.writeByte('\'');
+                try w.writeAll(arg);
+                if (has_space) try w.writeByte('\'');
+            }
+            try writer.writeByte('\n');
+            for (0..cw.bytes_written) |_| try writer.writeAll(" ");
+            // colored pointer and squiggles
+            try std.io.tty.detectConfig(f).setColor(f, .bright_yellow);
+            try writer.writeAll("^");
+            try std.io.tty.detectConfig(f).setColor(f, .yellow);
+            if (err_pos < args.len)
+                for (0..args[err_pos].len -| 1) |_| try writer.writeAll("~");
+            try std.io.tty.detectConfig(f).setColor(f, .reset);
+            try writer.writeAll("\n");
         }
 
         /// when `fmt` is "help", calls help()

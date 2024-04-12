@@ -443,3 +443,14 @@ test "derived shorts + aliases" {
     try expect(&.{ exe_path, "-aa", "1" }, .{ .aaa = 1 });
     try expect(&.{ exe_path, "--aaa", "1" }, .{ .aaa = 1 });
 }
+
+test "parseWithOptions" {
+    const S = struct { aaa: u8 };
+    const P = clarp.Parser(S, .{});
+
+    const s = try P.parseWithOptions(&.{ exe_path, "-aa", "1" }, .{}, .{
+        .fields = .{ .aaa = .{ .alias = "-aa" } },
+        .derive_short_names = true,
+    });
+    try testing.expectEqualDeep(S{ .aaa = 1 }, s.root);
+}
