@@ -12,7 +12,7 @@ const TestParser = clarp.Parser(union(enum) {
         pub const clarp_options = Options(@This()){
             .fields = .{
                 .outpath = .{
-                    .alias = "-o",
+                    .short = "-o",
                     .desc = "file path to output file",
                 },
                 .piece_index = .{
@@ -202,7 +202,7 @@ const SimpleOptions = clarp.Parser(struct {
     pub const clarp_options = clarp.Options(@This()){
         .fields = .{
             .opt1 = .{
-                .alias = "-o1",
+                .short = "-o1",
                 .desc = "first option description",
             },
         },
@@ -429,11 +429,11 @@ test "array" {
     try expect(&.{ exe_path, "--arr", "0", "1", "2" }, .{ .arr = .{ 0, 1, 2 } });
 }
 
-test "derived shorts + aliases" {
+test "derived shorts + short" {
     const P = clarp.Parser(struct {
         aaa: u8,
         pub const clarp_options = Options(@This()){
-            .fields = .{ .aaa = .{ .alias = "-aa" } },
+            .fields = .{ .aaa = .{ .short = "-aa" } },
             .derive_short_names = true,
         };
     }, .{});
@@ -449,8 +449,21 @@ test "parseWithOptions" {
     const P = clarp.Parser(S, .{});
 
     const s = try P.parseWithOptions(&.{ exe_path, "-aa", "1" }, .{}, .{
-        .fields = .{ .aaa = .{ .alias = "-aa" } },
+        .fields = .{ .aaa = .{ .short = "-aa" } },
         .derive_short_names = true,
     });
     try testing.expectEqualDeep(S{ .aaa = 1 }, s.root);
+}
+
+test "rename long" {
+    const P = clarp.Parser(struct {
+        foo: u8,
+        pub const clarp_options = Options(@This()){
+            .fields = .{ .foo = .{ .long = "bar" } },
+        };
+    }, .{});
+
+    try testing.expectError(error.InvalidCharacter, P.parse(&.{ exe_path, "--foo", "1" }, .{}));
+    const expect = expectFn(P);
+    try expect(&.{ exe_path, "--bar", "1" }, .{ .foo = 1 });
 }

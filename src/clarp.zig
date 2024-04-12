@@ -8,12 +8,17 @@ const log = std.log.scoped(.@"cli-parsing");
 
 pub const FieldOption = struct {
     /// an alternate option or command name for this field.  for a field named
-    /// 'foo' and alias '-f', either '--foo' and '-f' will match.
-    alias: ?[]const u8 = null,
+    /// 'foo' and short '-f', either '--foo' and '-f' will match.
+    ///
+    /// if provided and 'derive_short_names' is true, this becomes the short
+    /// name.
+    short: ?[]const u8 = null,
     /// description for this field to be shown in help
     desc: ?[]const u8 = null,
     /// help text override for this field
     help: ?[]const u8 = null,
+    /// changes the option or command name. effectively renames the field.
+    long: ?[]const u8 = null,
 };
 
 pub fn Options(comptime T: type) type {
@@ -331,7 +336,7 @@ pub fn Parser(comptime T: type, comptime options: ParserOptions) type {
                             override(args, parse_options.user_ctx);
                             continue :args;
                         },
-                        .short, .long, .alias => |fe| if (@typeInfo(FieldEnum).Enum.fields.len > 0) {
+                        .short, .long => |fe| if (@typeInfo(FieldEnum).Enum.fields.len > 0) {
                             switch (fe) {
                                 inline else => |tag| {
                                     log.debug("found {s} {s} {s}", .{ @tagName(named_option), args.*[0], @tagName(tag) });
@@ -448,7 +453,7 @@ pub fn Parser(comptime T: type, comptime options: ParserOptions) type {
             return payload;
         }
 
-        /// returns kv pair for each end_mark, override, derived short name, aliase, long name.
+        /// returns kv pair for each end_mark, override, derived short name, short, long name.
         /// each pair has type struct{[]const u8, NamedOption(FieldEnum)}
         fn GenKvs(
             comptime V: type,
@@ -460,23 +465,28 @@ pub fn Parser(comptime T: type, comptime options: ParserOptions) type {
         ) []const Kv(FieldEnum) {
             comptime {
                 // calculate the buffer size needed
-                const end_mark_len: usize = @intFromBool(clarp_options.end_mark != null or field_name != null);
-                const overrides_len = if (clarp_options.overrides != null) std.meta.declarations(clarp_options.overrides.?).len else 0;
-                var shorts_len: usize = 0;
+                const end_mark_len: usize = @intFromBool(field_name != null or
+                    clarp_options.end_mark != null);
+                const overrides_len = if (clarp_options.overrides != null)
+                    std.meta.declarations(clarp_options.overrides.?).len
+                else
+                    0;
+                var dshorts_len: usize = 0;
                 if (clarp_options.derive_short_names) {
                     for (std.meta.tags(FieldEnum)) |tag| {
-                        if (@field(clarp_options.fields, @tagName(tag)).alias != null) continue;
+                        if (@field(clarp_options.fields, @tagName(tag)).short != null)
+                            continue;
+                        dshorts_len += 1;
+                    }
+                }
+                var shorts_len: usize = 0;
+                for (std.meta.tags(FieldEnum)) |tag| {
+                    if (@field(clarp_options.fields, @tagName(tag)).short != null) {
                         shorts_len += 1;
                     }
                 }
-                var aliases_len: usize = 0;
-                for (std.meta.tags(FieldEnum)) |tag| {
-                    if (@field(clarp_options.fields, @tagName(tag)).alias != null) {
-                        aliases_len += 1;
-                    }
-                }
                 const kv_len: usize = end_mark_len + overrides_len +
-                    shorts_len + aliases_len + struct_info.fields.len;
+                    dshorts_len + shorts_len + struct_info.fields.len;
 
                 // assign kvs
                 var kvs: [kv_len]Kv(FieldEnum) = undefined;
@@ -497,23 +507,35 @@ pub fn Parser(comptime T: type, comptime options: ParserOptions) type {
                         kvidx += 1;
                     }
                 }
+
                 if (clarp_options.derive_short_names) {
                     for (std.meta.tags(Short), 0..) |tag, j| {
                         const fe = std.meta.tags(FieldEnum)[j];
-                        if (@field(clarp_options.fields, @tagName(fe)).alias != null) continue;
+                        if (@field(clarp_options.fields, @tagName(fe)).short != null)
+                            continue;
                         kvs[kvidx] = .{ "-" ++ @tagName(tag), .{ .short = fe } };
                         kvidx += 1;
                     }
                 }
 
                 for (std.meta.tags(FieldEnum)) |tag| {
+                    // add long
                     const tagname = @tagName(tag);
-                    var buf: [tagname.len]u8 = undefined;
-                    const fname = options.caseFn(&buf, tagname);
-                    kvs[kvidx] = .{ "--" ++ fname, .{ .long = tag } };
+                    kvs[kvidx] = if (@field(clarp_options.fields, @tagName(tag)).long) |long|
+                        .{ "--" ++ long, .{ .long = tag } }
+                    else blk: {
+                        var buf: [tagname.len]u8 = undefined;
+                        const fname = options.caseFn(&buf, tagname);
+                        break :blk .{ "--" ++ fname, .{ .long = tag } };
+                    };
                     kvidx += 1;
-                    if (@field(clarp_options.fields, @tagName(tag)).alias != null) {
-                        kvs[kvidx] = .{ @field(clarp_options.fields, @tagName(tag)).alias.?, .{ .alias = tag } };
+
+                    // add optional short
+                    if (@field(clarp_options.fields, @tagName(tag)).short != null) {
+                        kvs[kvidx] = .{
+                            @field(clarp_options.fields, @tagName(tag)).short.?,
+                            .{ .short = tag },
+                        };
                         kvidx += 1;
                     }
                 }
@@ -529,7 +551,6 @@ pub fn Parser(comptime T: type, comptime options: ParserOptions) type {
             return union(enum) {
                 override: Override,
                 end_mark,
-                alias: FieldEnum,
                 short: FieldEnum,
                 long: FieldEnum,
             };
@@ -744,17 +765,17 @@ pub fn Parser(comptime T: type, comptime options: ParserOptions) type {
         fn printAlias(comptime V: type, writer: anytype, field: anytype) !void {
             if (@hasDecl(V, "clarp_options")) {
                 const opt: FieldOption = @field(V.clarp_options.fields, field.name);
-                if (opt.alias) |alias| try writer.print(" {s}", .{alias});
+                if (opt.short) |short| try writer.print(" {s}", .{short});
             }
         }
 
         fn printShort(comptime V: type, comptime vfields: anytype, writer: anytype, comptime fieldi: usize) !void {
             if (@hasDecl(V, "clarp_options") and V.clarp_options.derive_short_names) {
-                const alias = @typeInfo(ShortNames(vfields)).Enum.fields[fieldi];
+                const short = @typeInfo(ShortNames(vfields)).Enum.fields[fieldi];
                 const info = @typeInfo(V);
                 switch (info) {
-                    .Struct => try writer.print(" -{s}", .{alias.name}),
-                    .Union => try writer.print(" {s}", .{alias.name}),
+                    .Struct => try writer.print(" -{s}", .{short.name}),
+                    .Union => try writer.print(" {s}", .{short.name}),
                     else => unreachable,
                 }
             }
