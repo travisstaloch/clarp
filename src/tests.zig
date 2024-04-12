@@ -233,7 +233,7 @@ pub fn main() !void {
     std.debug.print("{}\n", .{opts});
 }
 
-test "derive_short_names struct" {
+test "derive_short_names - struct" {
     const P = clarp.Parser(struct {
         xxx: u8,
         xyy: u8,
@@ -249,7 +249,7 @@ test "derive_short_names struct" {
     );
 }
 
-test "derive_short_names union" {
+test "derive_short_names - union" {
     const P = clarp.Parser(union(enum) {
         xxx: u8,
         xyy: u8,
@@ -266,7 +266,7 @@ test "derive_short_names union" {
 }
 
 test "struct end mark" {
-    {
+    { // default end mark
         const P = clarp.Parser(struct {
             a: struct {
                 b: u8 = 1,
@@ -280,7 +280,7 @@ test "struct end mark" {
         );
         try expect(&.{ exe_path, "--a", "--end-a", "--b", "20" }, .{ .b = 20 });
     }
-    {
+    { // custom end mark
         const P = clarp.Parser(struct {
             a: struct {
                 b: u8 = 1,
@@ -297,23 +297,22 @@ test "struct end mark" {
     }
 }
 
-test "caseFn" {
-    {
-        const P = clarp.Parser(
-            union(enum) { foo_bar: u8 },
-            .{ .caseFn = clarp.caseKebab },
-        );
-        const expect = expectFn(P);
-        try expect(&.{ exe_path, "foo-bar", "42" }, .{ .foo_bar = 42 });
-    }
-    {
-        const P = clarp.Parser(
-            struct { foo_bar: u8 },
-            .{ .caseFn = clarp.caseKebab },
-        );
-        const expect = expectFn(P);
-        try expect(&.{ exe_path, "--foo-bar", "42" }, .{ .foo_bar = 42 });
-    }
+test "caseFn - union" {
+    const P = clarp.Parser(
+        union(enum) { foo_bar: u8 },
+        .{ .caseFn = clarp.caseKebab },
+    );
+    const expect = expectFn(P);
+    try expect(&.{ exe_path, "foo-bar", "42" }, .{ .foo_bar = 42 });
+}
+
+test "caseFn - struct" {
+    const P = clarp.Parser(
+        struct { foo_bar: u8 },
+        .{ .caseFn = clarp.caseKebab },
+    );
+    const expect = expectFn(P);
+    try expect(&.{ exe_path, "--foo-bar", "42" }, .{ .foo_bar = 42 });
 }
 
 test "help override field - struct" {
@@ -444,10 +443,9 @@ test "derived shorts + short" {
     try expect(&.{ exe_path, "--aaa", "1" }, .{ .aaa = 1 });
 }
 
-test "parseWithOptions" {
+test "parseWithOptions - struct" {
     const S = struct { aaa: u8 };
     const P = clarp.Parser(S, .{});
-
     const s = try P.parseWithOptions(&.{ exe_path, "-aa", "1" }, .{}, .{
         .fields = .{ .aaa = .{ .short = "-aa" } },
         .derive_short_names = true,
@@ -455,7 +453,17 @@ test "parseWithOptions" {
     try testing.expectEqualDeep(S{ .aaa = 1 }, s.root);
 }
 
-test "rename long" {
+test "parseWithOptions - union" {
+    const U = union(enum) { aaa: u8 };
+    const P = clarp.Parser(U, .{});
+    const s = try P.parseWithOptions(&.{ exe_path, "aa", "1" }, .{}, .{
+        .fields = .{ .aaa = .{ .short = "aa" } },
+        .derive_short_names = true,
+    });
+    try testing.expectEqualDeep(U{ .aaa = 1 }, s.root);
+}
+
+test "rename long - struct" {
     const P = clarp.Parser(struct {
         foo: u8,
         pub const clarp_options = Options(@This()){
@@ -466,4 +474,17 @@ test "rename long" {
     try testing.expectError(error.InvalidCharacter, P.parse(&.{ exe_path, "--foo", "1" }, .{}));
     const expect = expectFn(P);
     try expect(&.{ exe_path, "--bar", "1" }, .{ .foo = 1 });
+}
+
+test "rename long - union" {
+    const P = clarp.Parser(union(enum) {
+        foo: u8,
+        pub const clarp_options = Options(@This()){
+            .fields = .{ .foo = .{ .long = "bar" } },
+        };
+    }, .{});
+
+    try testing.expectError(error.UnknownCommand, P.parse(&.{ exe_path, "foo", "1" }, .{}));
+    const expect = expectFn(P);
+    try expect(&.{ exe_path, "bar", "1" }, .{ .foo = 1 });
 }

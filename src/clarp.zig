@@ -252,72 +252,97 @@ pub fn Parser(comptime T: type, comptime options: ParserOptions) type {
                         return a;
                     }
                 },
-                .Union => |x| {
-                    const Shorts = ShortNames(x.fields);
-                    comptime var buflen: u16 = 0;
-                    inline for (x.fields) |f| buflen = @max(buflen, f.name.len);
-                    var buf: [buflen]u8 = undefined;
-                    inline for (x.fields, @typeInfo(Shorts).Enum.fields) |uf, sf| {
-                        const tagname = options.caseFn(&buf, uf.name);
-                        if (mem.eql(u8, sf.name, args.*[0]) or
-                            mem.eql(u8, tagname, args.*[0]))
-                        {
-                            args.* = args.*[1..];
-                            return @unionInit(V, uf.name, try parsePayload(
-                                args,
-                                uf.type,
-                                uf.name,
-                                parse_options,
-                                clarpOptions(uf.type),
-                            ));
-                        }
-                    }
-
-                    try logErr("unknown command '{s}'\n", .{args.*[0]}, parse_options.err_file);
-                    return error.UnknownCommand;
-                },
-                .Struct => |x| return try parseStruct(
+                .Union => return try parseUnion(
                     args,
                     V,
                     field_name,
                     parse_options,
-                    x,
+                    info,
+                    if (@hasDecl(V, "clarp_options")) V.clarp_options else clarp_options,
+                ),
+                .Struct => return try parseStruct(
+                    args,
+                    V,
+                    field_name,
+                    parse_options,
+                    info,
                     if (@hasDecl(V, "clarp_options")) V.clarp_options else clarp_options,
                 ),
             }
         }
 
-        pub fn parseStruct(
+        fn parseUnion(
             args: *[]const []const u8,
             comptime V: type,
             comptime field_name: ?[]const u8,
             parse_options: ParseOptions,
-            comptime info: std.builtin.Type.Struct,
+            comptime info: std.builtin.Type,
             comptime clarp_options: Options(V),
         ) !V {
-            // const has_options = @hasDecl(V, "clarp_options");
-            var payload: V = mem.zeroInit(V, .{});
-            var fields_seen = std.StaticBitSet(info.fields.len).initEmpty();
-            const vfields = info.fields;
+            const fields = info.Union.fields;
+            const FieldEnum = std.meta.FieldEnum(V);
+            const kvs = comptime GenKvs(V, ShortNames(fields), FieldEnum, info, clarp_options, field_name);
+            const map = std.ComptimeStringMap(NamedOption(FieldEnum), kvs);
 
-            const Short = ShortNames(info.fields);
+            if (map.get(args.*[0])) |named_option| {
+                switch (named_option) {
+                    .override => |override| {
+                        log.debug("found override", .{});
+                        args.* = args.*[1..];
+                        override(args, parse_options.user_ctx);
+                    },
+                    .end_mark => return error.UnionEndMark,
+                    .short, .long => |fe| if (@typeInfo(FieldEnum).Enum.fields.len > 0) {
+                        switch (fe) {
+                            inline else => |tag| {
+                                log.debug("found {s} {s} {s}", .{ @tagName(named_option), args.*[0], @tagName(tag) });
+                                args.* = args.*[1..];
+                                const Ft = std.meta.TagPayload(V, tag);
+                                return @unionInit(V, @tagName(tag), try parsePayload(
+                                    args,
+                                    Ft,
+                                    @tagName(tag),
+                                    parse_options,
+                                    clarpOptions(Ft),
+                                ));
+                            },
+                        }
+                        unreachable;
+                    },
+                }
+            }
+
+            try logErr("unknown command '{s}'\n", .{args.*[0]}, parse_options.err_file);
+            return error.UnknownCommand;
+        }
+
+        fn parseStruct(
+            args: *[]const []const u8,
+            comptime V: type,
+            comptime field_name: ?[]const u8,
+            parse_options: ParseOptions,
+            comptime info: std.builtin.Type,
+            comptime clarp_options: Options(V),
+        ) !V {
+            var payload: V = mem.zeroInit(V, .{});
+            const fields = info.Struct.fields;
+            var fields_seen = std.StaticBitSet(fields.len).initEmpty();
+            const vfields = fields;
+
+            const Short = ShortNames(fields);
             const FieldEnum = std.meta.FieldEnum(V);
             const kvs = comptime GenKvs(V, Short, FieldEnum, info, clarp_options, field_name);
-            comptime for (kvs) |kv| {
-                var count: u8 = 0;
-                for (kvs) |kv2| {
-                    count += @intFromBool(mem.eql(u8, kv[0], kv2[0]));
-                    if (count > 1) @compileError("duplicate key '" ++ kv[0] ++ "'");
-                }
-            };
             const map = std.ComptimeStringMap(NamedOption(FieldEnum), kvs);
-            log.debug("parseStruct() kvs.len {} V {s} fields {} {s}", .{ kvs.len, @typeName(V), info.fields.len, std.meta.fieldNames(V) });
+            log.debug(
+                "parseStruct() kvs.len {} V {s} fields {} {s}",
+                .{ kvs.len, @typeName(V), fields.len, std.meta.fieldNames(V) },
+            );
 
             args: while (args.len > 0 and
-                (fields_seen.count() < info.fields.len or
+                (fields_seen.count() < fields.len or
                 clarp_options.overrides != null))
             {
-                inline for (info.fields, 0..) |f, i| {
+                inline for (fields, 0..) |f, i| {
                     if (fields_seen.isSet(i))
                         log.debug("{s}: {any}", .{ f.name, @field(payload, f.name) });
                 }
@@ -403,7 +428,7 @@ pub fn Parser(comptime T: type, comptime options: ParserOptions) type {
                         try logErr("extra args {s}\n", .{args.*}, parse_options.err_file);
                         return error.ExtraArgs;
                     };
-                    inline for (info.fields, 0..) |f, fi| {
+                    inline for (fields, 0..) |f, fi| {
                         if (fi == next_fieldi) {
                             @field(payload, f.name) = try parsePayload(
                                 args,
@@ -422,7 +447,7 @@ pub fn Parser(comptime T: type, comptime options: ParserOptions) type {
             }
 
             // set field default values if provided
-            inline for (info.fields, 0..) |f, i| {
+            inline for (fields, 0..) |f, i| {
                 if (!fields_seen.isSet(i)) {
                     if (f.default_value) |d| {
                         fields_seen.set(i);
@@ -434,9 +459,9 @@ pub fn Parser(comptime T: type, comptime options: ParserOptions) type {
                 }
             }
 
-            log.debug("fields seen {}/{}", .{ fields_seen.count(), info.fields.len });
+            log.debug("fields seen {}/{}", .{ fields_seen.count(), fields.len });
             const field_names = std.meta.fieldNames(V);
-            if (field_names.len != 0 and fields_seen.count() != info.fields.len) {
+            if (field_names.len != 0 and fields_seen.count() != fields.len) {
                 try logErr("missing fields: ", .{}, parse_options.err_file);
                 var iter = fields_seen.iterator(.{ .kind = .unset });
                 var i: u32 = 0;
@@ -459,7 +484,7 @@ pub fn Parser(comptime T: type, comptime options: ParserOptions) type {
             comptime V: type,
             comptime Short: type,
             comptime FieldEnum: type,
-            comptime struct_info: std.builtin.Type.Struct,
+            comptime info: std.builtin.Type,
             comptime clarp_options: Options(V),
             comptime field_name: ?[]const u8,
         ) []const Kv(FieldEnum) {
@@ -486,7 +511,11 @@ pub fn Parser(comptime T: type, comptime options: ParserOptions) type {
                     }
                 }
                 const kv_len: usize = end_mark_len + overrides_len +
-                    dshorts_len + shorts_len + struct_info.fields.len;
+                    dshorts_len + shorts_len + switch (info) {
+                    .Struct => info.Struct.fields.len,
+                    .Union => info.Union.fields.len,
+                    else => unreachable,
+                };
 
                 // assign kvs
                 var kvs: [kv_len]Kv(FieldEnum) = undefined;
@@ -508,12 +537,15 @@ pub fn Parser(comptime T: type, comptime options: ParserOptions) type {
                     }
                 }
 
+                const short_prefix: []const u8 = if (info == .Struct) "-" else "";
+                const long_prefix: []const u8 = if (info == .Struct) "--" else "";
+
                 if (clarp_options.derive_short_names) {
                     for (std.meta.tags(Short), 0..) |tag, j| {
                         const fe = std.meta.tags(FieldEnum)[j];
                         if (@field(clarp_options.fields, @tagName(fe)).short != null)
                             continue;
-                        kvs[kvidx] = .{ "-" ++ @tagName(tag), .{ .short = fe } };
+                        kvs[kvidx] = .{ short_prefix ++ @tagName(tag), .{ .short = fe } };
                         kvidx += 1;
                     }
                 }
@@ -522,11 +554,11 @@ pub fn Parser(comptime T: type, comptime options: ParserOptions) type {
                     // add long
                     const tagname = @tagName(tag);
                     kvs[kvidx] = if (@field(clarp_options.fields, @tagName(tag)).long) |long|
-                        .{ "--" ++ long, .{ .long = tag } }
+                        .{ long_prefix ++ long, .{ .long = tag } }
                     else blk: {
                         var buf: [tagname.len]u8 = undefined;
                         const fname = options.caseFn(&buf, tagname);
-                        break :blk .{ "--" ++ fname, .{ .long = tag } };
+                        break :blk .{ long_prefix ++ fname, .{ .long = tag } };
                     };
                     kvidx += 1;
 
@@ -540,6 +572,13 @@ pub fn Parser(comptime T: type, comptime options: ParserOptions) type {
                     }
                 }
                 std.debug.assert(kv_len == kvidx);
+                for (kvs) |kv| {
+                    var count: u8 = 0;
+                    for (kvs) |kv2| {
+                        count += @intFromBool(mem.eql(u8, kv[0], kv2[0]));
+                        if (count > 1) @compileError("duplicate key '" ++ kv[0] ++ "'");
+                    }
+                }
                 const ret = &kvs;
                 return ret;
             }
@@ -716,8 +755,8 @@ pub fn Parser(comptime T: type, comptime options: ParserOptions) type {
                             const name = options.caseFn(&buf, f.name);
                             try writer.writeAll(name);
                         }
-                        try printShort(V, x.fields, writer, fi);
-                        try printAlias(V, writer, f);
+                        try printDerivedShort(V, x.fields, writer, fi);
+                        try printShort(V, writer, f);
                         try printHelp(f.type, fmt, fmt_opts, writer, depth + 1);
                         if (f.default_value) |d| {
                             const dv = @as(*const f.type, @ptrCast(@alignCast(d))).*;
@@ -753,8 +792,8 @@ pub fn Parser(comptime T: type, comptime options: ParserOptions) type {
                         }
                         const fname = options.caseFn(&buf, f.name);
                         try writer.writeAll(fname);
-                        try printShort(V, x.fields, writer, fi);
-                        try printAlias(V, writer, f);
+                        try printDerivedShort(V, x.fields, writer, fi);
+                        try printShort(V, writer, f);
                         try printHelp(f.type, fmt, fmt_opts, writer, depth + 1);
                         try printDesc(V, writer, f);
                     }
@@ -762,14 +801,14 @@ pub fn Parser(comptime T: type, comptime options: ParserOptions) type {
             }
         }
 
-        fn printAlias(comptime V: type, writer: anytype, field: anytype) !void {
+        fn printShort(comptime V: type, writer: anytype, field: anytype) !void {
             if (@hasDecl(V, "clarp_options")) {
                 const opt: FieldOption = @field(V.clarp_options.fields, field.name);
                 if (opt.short) |short| try writer.print(" {s}", .{short});
             }
         }
 
-        fn printShort(comptime V: type, comptime vfields: anytype, writer: anytype, comptime fieldi: usize) !void {
+        fn printDerivedShort(comptime V: type, comptime vfields: anytype, writer: anytype, comptime fieldi: usize) !void {
             if (@hasDecl(V, "clarp_options") and V.clarp_options.derive_short_names) {
                 const short = @typeInfo(ShortNames(vfields)).Enum.fields[fieldi];
                 const info = @typeInfo(V);
@@ -890,7 +929,7 @@ test mustConsume {
     }));
 }
 
-pub fn isZigString(comptime T: type) bool {
+fn isZigString(comptime T: type) bool {
     return comptime blk: {
         // Only pointer types can be strings, no optionals
         const info = @typeInfo(T);

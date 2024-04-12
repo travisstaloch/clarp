@@ -17,7 +17,7 @@ Create command line parsers from zig unions and structs.
 * dump parsed results
   * from any print() method: `std.debug.print("{}", .{parse_result});`
 * derive short names
-* create parsers from types you don't control
+* apply `clarp_options` to types you don't control with `parseWithOptions()`
 
 # Overview
 Union types create alternative commands.  Commands match field names exactly.
@@ -29,7 +29,7 @@ Tuple types create unnamed sequences and are parsed strictly by position.
 Bool fields create 'flags' and may be specified as `--flag` or `true`/`false` when unnamed.  They are always optional and default to false.
 
 ## Zig version
-This package was developed against zig version 0.12.0-dev.3343+294f51814
+This package was developed against zig version 0.12.0-dev.3594+355cceebc
 
 # Usage
 You can find many examples in [tests](src/tests.zig).
@@ -57,7 +57,7 @@ const ArgParser = clarp.Parser(struct {
     pub const clarp_options = clarp.Options(@This()){
         .fields = .{
             .opt1 = .{
-                .alias = "-o1",
+                .short = "-o1",
                 .desc = "first option description",
             },
         },
@@ -95,7 +95,7 @@ options:
 
 ```
 
-Notice how this message is derived from the struct above and that its `options` declaration affects the output, adding the `-o1` alias and description.
+Notice how this message is derived from the struct above and that its `options` declaration affects the output, adding the `-o1` short and description.
 
 ### Parser Options
 second argument to `clarp.Parser()`.  these are global options.
@@ -133,7 +133,7 @@ $ zig-out/bin/testexe --opt2 b 'opt1 value'
 opt1: opt1 value
 opt2: b
 ```
-#### Alias names
+#### Short names
 ```console
 $ zig-out/bin/testexe -o1 'opt1 value'
 
@@ -186,7 +186,7 @@ Users can manually parse options by providing an `overrides` struct.  If any of 
 - [ ] make README significantly shorter
 - [x] put all options in one place - clarp_options
 - [ ] should always be max 2 options, a long and optional short. 
-  - [x] derived shorts use alias if exists
+  - [x] derived shorts use short if exists
 - [x] support parsing types which users don't have control over
   - [x] add parseWithOptions(T, ClarpOptions)
-- [ ] rename fields
+- [x] rename fields - FieldOption.long
