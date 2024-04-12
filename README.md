@@ -16,8 +16,9 @@ Create command line parsers from zig unions and structs.
 * colored diagnostics which point to errors
 * dump parsed results
   * from any print() method: `std.debug.print("{}", .{parse_result});`
-* derive short names
+* derive short names or override with `FieldOption.short`
 * apply `clarp_options` to types you don't control with `parseWithOptions()`
+* rename long names with `FieldOption.long`
 
 # Overview
 Union types create alternative commands.  Commands match field names exactly.
@@ -35,6 +36,23 @@ This package was developed against zig version 0.12.0-dev.3594+355cceebc
 You can find many examples in [tests](src/tests.zig).
 
 ## Add clarp dependency
+
+#### Fetch
+```console
+$ zig fetch --save=clarp https://github.com/travisstaloch/clarp/archive/53b7ebad33e35359a5dedf111ba5387c604a927a.tar.gz
+```
+This will add the following
+```zig
+// build.zig.zon
+.dependencies = .{
+    .clarp = .{
+        .url = "https://github.com/travisstaloch/clarp/archive/53b7ebad33e35359a5dedf111ba5387c604a927a.tar.gz",
+        .hash = "1220adb587cde6b1e62a03779e7724a51aea94822e4a7db6bd5f326f870adfb9c9a7",
+    },
+},
+```
+
+#### Modify build.zig
 ```zig
 // build.zig
 pub fn build(b: *std.Build) void {
@@ -77,7 +95,7 @@ pub fn main() !void {
 }
 ```
 
-### [clarp_options](src/clarp.zig#L19)
+### [clarp_options](src/clarp.zig#L24)
 When a struct or union contains a `pub const clarp_options` declaration, it changes parsing behavior.  Nested structs and unions may declare their own `clarp_options`.
 
 ### Default help flags
@@ -187,6 +205,7 @@ Users can manually parse options by providing an `overrides` struct.  If any of 
 - [x] put all options in one place - clarp_options
 - [x] should always be max 2 options, a long and optional short. 
   - [x] derived shorts use FieldOption.short if exists
+  - [x] account for FieldOption.short while deriving shorts
 - [x] support parsing types which users don't have control over
   - [x] add parseWithOptions(T, ClarpOptions)
 - [x] rename fields - FieldOption.long

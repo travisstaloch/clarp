@@ -499,7 +499,7 @@ test "printHelp" {
         \\options:
         \\  help --help -h // show this message. must be first argument.
         \\  --opt1 -o1: string // first option description
-        \\  --opt2 -op: enum { a, b } = a
+        \\  --opt2 -o: enum { a, b } = a
         \\
         \\
     , l.items);

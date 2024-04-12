@@ -281,7 +281,7 @@ pub fn Parser(comptime T: type, comptime options: ParserOptions) type {
         ) !V {
             const fields = info.Union.fields;
             const FieldEnum = std.meta.FieldEnum(V);
-            const kvs = comptime GenKvs(V, ShortNames(fields), FieldEnum, info, clarp_options, field_name);
+            const kvs = comptime GenKvs(V, ShortNames(fields, V), FieldEnum, info, clarp_options, field_name);
             const map = std.ComptimeStringMap(NamedOption(FieldEnum), kvs);
 
             if (map.get(args.*[0])) |named_option| {
@@ -329,7 +329,7 @@ pub fn Parser(comptime T: type, comptime options: ParserOptions) type {
             var fields_seen = std.StaticBitSet(fields.len).initEmpty();
             const vfields = fields;
 
-            const Short = ShortNames(fields);
+            const Short = ShortNames(fields, V);
             const FieldEnum = std.meta.FieldEnum(V);
             const kvs = comptime GenKvs(V, Short, FieldEnum, info, clarp_options, field_name);
             const map = std.ComptimeStringMap(NamedOption(FieldEnum), kvs);
@@ -808,7 +808,7 @@ pub fn Parser(comptime T: type, comptime options: ParserOptions) type {
                     return;
                 }
                 if (V.clarp_options.derive_short_names) {
-                    const short = @typeInfo(ShortNames(vfields)).Enum.fields[fieldi];
+                    const short = @typeInfo(ShortNames(vfields, V)).Enum.fields[fieldi];
                     const info = @typeInfo(V);
                     switch (info) {
                         .Struct => try writer.print(" -{s}", .{short.name}),
@@ -829,9 +829,18 @@ pub fn Parser(comptime T: type, comptime options: ParserOptions) type {
 }
 
 /// returns an enum of shortest possible distinct field names
-fn ShortNames(vfields: anytype) type {
+fn ShortNames(vfields: anytype, comptime V: type) type {
     var fields: [vfields.len]std.builtin.Type.EnumField = undefined;
+    const clarp_options = clarpOptions(V);
     for (vfields, 0..) |sf, i| {
+        const field_opt: FieldOption = @field(clarp_options.fields, sf.name);
+        if (field_opt.short) |short| {
+            fields[i] = .{
+                .name = (short ++ [1]u8{0})[0..short.len :0],
+                .value = i,
+            };
+            continue;
+        }
         var preflen: usize = 1;
         // search previous fields. if duplicate field name found, increase len
 
@@ -845,7 +854,7 @@ fn ShortNames(vfields: anytype) type {
             if (!found) break name;
         };
         fields[i] = .{
-            .name = (name[0..name.len].* ++ [1]u8{0})[0..name.len :0],
+            .name = (name ++ [1]u8{0})[0..name.len :0],
             .value = i,
         };
     }
