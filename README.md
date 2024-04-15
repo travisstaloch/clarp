@@ -13,7 +13,7 @@ Create command line parsers from zig unions and structs.
   * customizable via options
   * writes to `parse_options.err_writer` (default stderr)
   * from any print() method: `std.debug.print("{help}", .{parse_result});`
-* colored diagnostics which point to errors
+* diagnostics which point to errors
 * dump parsed results
   * from any print() method: `std.debug.print("{}", .{parse_result});`
 * derive short names or override with `FieldOption.short`
@@ -186,7 +186,6 @@ Users can manually parse options by providing an `overrides` struct.  If any of 
   - [x] use comptime string map of all possible options and compile error if duplicate keys are found.
   - [x] do same for unions/commands
 - [x] add Option to derive shorts
-- [ ] add colors to help output
 - [x] support 'end of sequence' marker. default '--end-field_name'
   - [x] allow user to override via struct `pub const end_mark = "--foo"`
 - [x] parse options
@@ -197,10 +196,16 @@ Users can manually parse options by providing an `overrides` struct.  If any of 
 - [x] unify error writing. currently using log.err, stderr, err_writer. these should be one.
   - [x] use ParseOptions.err_file
 - [x] allow collapsing several shorts into one i.e. '-ab' instead of '-a -b'
-- [ ] help text
+- help text
   - [x] override text by field
   - [x] override entire help text
-  - [ ] print aligned table - choose min alignment + allow user to override
+  - [x] print aligned table - choose min alignment + allow user to override
+    - [x] break to next line if too long
+  - [x] improve default from generic 'Usage: exe [command] [options]'
+    - nested commands
+      - [x] show previous commands and either [command] or [options] depending on struct/union
+        - ie 'Usage: exe command [options]'
+      - [x] show command desc
 - [ ] make README significantly shorter
 - [x] put all options in one place - clarp_options
 - [x] should always be max 2 options, a long and optional short. 
@@ -209,3 +214,6 @@ Users can manually parse options by providing an `overrides` struct.  If any of 
 - [x] support parsing types which users don't have control over
   - [x] add parseWithOptions(T, ClarpOptions)
 - [x] rename fields - FieldOption.long
+- [ ] clean up repetitive 'orelse std.io.getStdErr().writer().any()'
+  - [ ] make err_writer default to io.null_writer instead of being optional
+- [ ] parsePayload() has too many args. make Ctx type.
