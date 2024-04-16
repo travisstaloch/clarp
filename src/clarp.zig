@@ -56,6 +56,7 @@ pub fn Options(comptime T: type) type {
 pub const ParseOptions = struct {
     user_ctx: ?*anyopaque = null,
     err_writer: std.io.AnyWriter = std.io.null_writer.any(),
+    allocator: ?mem.Allocator = null,
 };
 
 /// global options, comptime
@@ -194,10 +195,7 @@ pub fn Parser(comptime T: type, comptime options: ParserOptions) type {
             }
 
             switch (info) {
-                else => |x| if (comptime isZigString(V)) {
-                    defer args.* = args.*[1..];
-                    return args.*[0];
-                } else @compileError("TODO support " ++ @tagName(x)),
+                else => |x| @compileError("TODO support " ++ @tagName(x)),
                 .Void => return {},
                 .Int => {
                     defer args.* = args.*[1..];
@@ -270,6 +268,26 @@ pub fn Parser(comptime T: type, comptime options: ParserOptions) type {
                         }
                         return a;
                     }
+                },
+                .Pointer => |x| if (comptime isZigString(V)) {
+                    defer args.* = args.*[1..];
+                    return args.*[0];
+                } else switch (x.size) {
+                    .Slice => if (ctx.parse_options.allocator == null)
+                        return error.AllocatorRequired
+                    else {
+                        var l = std.ArrayList(x.child).init(ctx.parse_options.allocator.?);
+                        errdefer l.deinit();
+                        while (args.len > 0 and !std.mem.startsWith(u8, args.*[0], "-")) {
+                            try l.append(try parsePayload(x.child, ctx, CtCtx(x.child).init(
+                                field_name,
+                                clarpOptions(x.child),
+                                ct_ctx.outer_desc,
+                            )));
+                        }
+                        return l.toOwnedSlice();
+                    },
+                    else => @compileError("TODO Pointer support " ++ @tagName(x.size)),
                 },
                 .Union => return try parseUnion(
                     V,
@@ -405,6 +423,7 @@ pub fn Parser(comptime T: type, comptime options: ParserOptions) type {
             const map = std.ComptimeStringMap(NamedOption(FieldEnum), kvs);
 
             var payload: V = initEmpty(V) catch undefined;
+            errdefer deinitPayload(V, payload, parse_options.allocator);
             var fields_seen = std.StaticBitSet(fields.len).initEmpty();
 
             debug(
@@ -667,6 +686,7 @@ pub fn Parser(comptime T: type, comptime options: ParserOptions) type {
             const fields = info.Struct.fields;
 
             var payload: V = initEmpty(V) catch undefined;
+            errdefer deinitPayload(V, payload, ctx.parse_options.allocator);
             debug("parsing tuple. arg {s}", .{args.*[0]});
 
             inline for (fields) |f| {
@@ -800,9 +820,9 @@ pub fn Parser(comptime T: type, comptime options: ParserOptions) type {
                     try dump(v, "*", fmt_opts, writer, depth)
                 else switch (x.size) {
                     .Slice => if (comptime isZigString(V))
-                        try writer.print(
-                            \\"{s}"
-                        , .{v})
+                        try writer.print("\"{s}\"", .{v})
+                    else if (comptime isZigString(x.child))
+                        try writer.print("{s}", .{v})
                     else
                         try std.fmt.formatType(v, "any", fmt_opts, writer, 0),
                     .One => if (V == *anyopaque)
@@ -865,10 +885,7 @@ pub fn Parser(comptime T: type, comptime options: ParserOptions) type {
             comptime buflen: u16,
         ) !void {
             switch (@typeInfo(V)) {
-                else => |x| if (comptime isZigString(V))
-                    try writer.writeAll(": string")
-                else
-                    @compileError("TODO " ++ @tagName(x)),
+                else => |x| @compileError("TODO " ++ @tagName(x)),
                 .Void, .Bool => {},
                 .Int, .Float => try writer.writeAll(": " ++ @typeName(V)),
                 .Enum => |e| {
@@ -884,6 +901,10 @@ pub fn Parser(comptime T: type, comptime options: ParserOptions) type {
                     .{ x.len, @typeName(x.child) },
                 ),
                 .Optional => |x| try writer.print(": ?{s}", .{@typeName(x.child)}),
+                .Pointer => if (comptime isZigString(V))
+                    try writer.writeAll(": string")
+                else
+                    try writer.writeAll(": " ++ @typeName(V)),
                 .Struct => |x| {
                     const has_options = @hasDecl(V, "clarp_options");
                     if (has_options and V.clarp_options.help != null) {
@@ -992,6 +1013,32 @@ pub fn Parser(comptime T: type, comptime options: ParserOptions) type {
                     }
                     try writer.print("{s}", .{d});
                 }
+            }
+        }
+
+        pub fn deinit(self: Self, allocator: ?mem.Allocator) void {
+            deinitPayload(Self.Root, self.root, allocator);
+        }
+
+        pub fn deinitPayload(comptime V: type, payload: V, allocator: ?mem.Allocator) void {
+            switch (@typeInfo(V)) {
+                else => |x| @compileError("TODO " ++ @tagName(x)),
+                .Void, .Int, .Float, .Bool, .Enum, .Array => {},
+                .Optional => |x| if (payload) |u|
+                    deinitPayload(x.child, u, allocator),
+                .Pointer => |x| switch (x.size) {
+                    .Slice => if (!comptime isZigString(V)) {
+                        const a = allocator orelse return;
+                        a.free(payload);
+                    },
+                    else => @compileError("TODO Pointer " ++ @tagName(x.size)),
+                },
+                .Struct => |x| inline for (x.fields) |f| {
+                    deinitPayload(f.type, @field(payload, f.name), allocator);
+                },
+                .Union => switch (payload) {
+                    inline else => |upayload| deinitPayload(@TypeOf(upayload), upayload, allocator),
+                },
             }
         }
     };

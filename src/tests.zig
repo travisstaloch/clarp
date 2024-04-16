@@ -55,6 +55,7 @@ fn expectFn(comptime P: type) ExpectFn(P) {
     return struct {
         fn func(args: []const []const u8, expected: P.Root) anyerror!void {
             const x = try P.parse(args, .{});
+            defer x.deinit(talloc);
             // exercise dump() and help() to catch compile errors
             try P.dump(x, "", .{}, std.io.null_writer, 0);
             try x.dump("", .{}, std.io.null_writer, 0);
@@ -579,4 +580,19 @@ test "printHelp - nested union" {
         \\
         \\
     , l.items);
+}
+
+test "allocate slice field" {
+    const P = clarp.Parser(struct {
+        files: []const []const u8,
+        b: u8,
+    }, .{});
+    try testing.expectError(error.AllocatorRequired, P.parse(&.{ "exe", "--files", "a" }, .{}));
+    // successfully parse 'files' field but 'b' field missing and must free slice
+    try testing.expectError(error.MissingFields, P.parse(&.{ "exe", "--files", "a" }, .{ .allocator = talloc }));
+    var r = try P.parse(&.{ exe_path, "--files", "a", "b", "c", "--b", "1" }, .{ .allocator = talloc });
+    defer r.deinit(talloc);
+    try testing.expectEqualSlices([]const u8, &.{ "a", "b", "c" }, r.root.files);
+    try testing.expectEqual(1, r.root.b);
+    std.debug.print("{help}\n", .{r});
 }
