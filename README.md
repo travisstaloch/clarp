@@ -1,6 +1,6 @@
 # About
 
-Create command line parsers from zig unions and structs.
+Derive customizable command line parsers from union and struct types.  Provides nested, context aware usage text similar to the zig compiler.  Works with existing data structures you may not control.
 
 # Features
 
@@ -8,14 +8,13 @@ Create command line parsers from zig unions and structs.
   * int, bool, enum, float, optional, array
   * nested unions and structs
 * help / usage
-  * automatically generated
   * automatically printed on parsing errors
-  * customizable via options
+  * very customizable
   * nested and context aware, showing only one level of help info at once
-  * writes to `parse_options.err_writer` (default `std.io.null_writer`)
-  * from any print() method: `std.debug.print("{help}", .{parse_result});`
-* diagnostics which point to errors
-* dump parsed results
+  * written to `parse_options.err_writer` (default `std.io.null_writer`)
+  * accessible from any print() method: `std.debug.print("{help}", .{parse_result});`
+* diagnostics which clearly point to parsing errors
+* easily dump parse results
   * from any print() method: `std.debug.print("{}", .{parse_result});`
 * derive short names and override with `FieldOption.short`
 * apply `clarp_options` to types you don't control with `parseWithOptions()`
@@ -40,20 +39,22 @@ You can find many examples in the [tests](src/tests.zig).
 
 #### Fetch
 ```console
-$ zig fetch --save=clarp https://github.com/travisstaloch/clarp/archive/53b7ebad33e35359a5dedf111ba5387c604a927a.tar.gz
+$ zig fetch --save=clarp https://github.com/travisstaloch/clarp/archive/<commit-hash>.tar.gz
 ```
 This will add the following
 ```zig
 // build.zig.zon
 .dependencies = .{
     .clarp = .{
-        .url = "https://github.com/travisstaloch/clarp/archive/53b7ebad33e35359a5dedf111ba5387c604a927a.tar.gz",
-        .hash = "1220adb587cde6b1e62a03779e7724a51aea94822e4a7db6bd5f326f870adfb9c9a7",
+        .url = "https://github.com/travisstaloch/clarp/archive/<commit-hash>.tar.gz",
+        .hash = ...,
     },
 },
 ```
 
 #### Modify build.zig
+see [here](build.zig#L26)
+
 ```zig
 // build.zig
 pub fn build(b: *std.Build) void {
