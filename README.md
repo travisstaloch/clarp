@@ -107,7 +107,7 @@ pub fn main() !void {
 ## [clarp_options](src/clarp.zig#L24)
 When a struct or union contains a `pub const clarp_options` declaration, it changes parsing behavior.  Nested structs and unions may declare their own `clarp_options`.
 
-## [ParserOptions](src/clarp.zig#L113)
+## [ParserOptions](src/clarp.zig#L59)
 These are comptime global parsing options. The second argument to clarp.Parser().
 
 ### help flags

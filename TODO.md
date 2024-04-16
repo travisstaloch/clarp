@@ -35,4 +35,4 @@
 - [x] rename fields - FieldOption.long
 - [x] clean up repetitive 'orelse std.io.getStdErr().writer().any()'
   - [x] make err_writer default to io.null_writer instead of being optional
-- [ ] parsePayload() has too many args. make Ctx type.
+- [x] parsePayload() has too many args. make Ctx type.
