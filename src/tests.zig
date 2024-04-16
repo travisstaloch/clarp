@@ -42,6 +42,7 @@ const TestParser = clarp.Parser(union(enum) {
         arr: [20]u8,
     },
     opt: ?[]const u8,
+    tuple: struct { u8, []const u8 },
 
     const Filepath = struct { filepath: []const u8 };
 }, .{});
@@ -72,37 +73,37 @@ test "Command" {
     try testing.expectError(error.UnknownCommand, TestParser.parse(&.{ "exe", "asdf" }, .{}));
     try testing.expectError(error.ExtraArgs, TestParser.parse(&.{ "exe", "decode", "1", "2", "3" }, .{}));
     try testing.expectError(error.NotEnoughArgs, TestParser.parse(&.{"exe"}, .{}));
+    try testing.expectError(error.UnknownOption, TestParser.parse(&.{ "exe", "handshake", "foo", "bar" }, .{}));
+    try testing.expectError(error.UnknownOption, TestParser.parse(&.{ "exe", "info", "foo" }, .{}));
+    try testing.expectError(error.UnknownOption, TestParser.parse(&.{ "exe", "handshake", "--peer_address", "foo", "bar" }, .{}));
+    try testing.expectError(error.UnknownOption, TestParser.parse(&.{ "exe", "defaults", "a", "true" }, .{}));
+    try testing.expectError(error.UnknownOption, TestParser.parse(&.{ "exe", "defaults", "a", "true", "42" }, .{}));
+    try testing.expectError(error.UnknownOption, TestParser.parse(&.{ "exe", "defaults", "a", "false", "42" }, .{}));
+    try testing.expectError(error.UnknownOption, TestParser.parse(&.{ "exe", "run", "c", "foo" }, .{}));
+    try testing.expectError(error.NotEnoughArgs, TestParser.parse(&.{ "exe", "tuple" }, .{}));
+    try testing.expectError(error.ExtraArgs, TestParser.parse(&.{ "exe", "tuple", "1", "2", "3" }, .{}));
 
     const expect = expectFn(TestParser);
-
     try expect(&.{ "exe", "decode", "foo" }, .{ .decode = .{"foo"} });
-    try expect(&.{ "exe", "info", "foo" }, .{ .info = .{ .filepath = "foo" } });
     try expect(
         &.{ "exe", "info", "--filepath", "foo" },
         .{ .info = .{ .filepath = "foo" } },
     );
-    try expect(
-        &.{ "exe", "handshake", "foo", "bar" },
-        .{ .handshake = .{ .filepath = "foo", .peer_address = "bar" } },
-    );
-    try expect(
-        &.{ "exe", "handshake", "--peer_address", "foo", "bar" },
-        .{ .handshake = .{ .filepath = "bar", .peer_address = "foo" } },
-    );
+
     try expect(
         &.{ "exe", "handshake", "--peer_address", "foo", "--filepath", "bar" },
         .{ .handshake = .{ .filepath = "bar", .peer_address = "foo" } },
     );
     try expect(
-        &.{ "exe", "download", "-o", "foo", "22" },
+        &.{ "exe", "download", "-o", "foo", "--piece_index", "22" },
         .{ .download = .{ .piece_index = 22, .outpath = "foo" } },
     );
     try expect(
-        &.{ "exe", "download", "--outpath", "foo", "22" },
+        &.{ "exe", "download", "--outpath", "foo", "--piece_index", "22" },
         .{ .download = .{ .piece_index = 22, .outpath = "foo" } },
     );
     try expect(
-        &.{ "exe", "download", "--piece_index", "22", "foo" },
+        &.{ "exe", "download", "--piece_index", "22", "-o", "foo" },
         .{ .download = .{ .piece_index = 22, .outpath = "foo" } },
     );
     try expect(
@@ -118,18 +119,6 @@ test "Command" {
         .{ .defaults = .{ .baz = true, .blip = false } },
     );
     try expect(
-        &.{ "exe", "defaults", "a", "true" },
-        .{ .defaults = .{ .bar = "a", .baz = true, .blip = false } },
-    );
-    try expect(
-        &.{ "exe", "defaults", "a", "true", "42" },
-        .{ .defaults = .{ .bar = "a", .baz = true, .int = 42, .blip = false } },
-    );
-    try expect(
-        &.{ "exe", "defaults", "a", "false", "42" },
-        .{ .defaults = .{ .bar = "a", .baz = false, .int = 42, .blip = false } },
-    );
-    try expect(
         &.{ "exe", "defaults", "--enyum", "delish" },
         .{ .defaults = .{ .enyum = .delish, .blip = false } },
     );
@@ -140,10 +129,6 @@ test "Command" {
     try expect(
         &.{ "exe", "run", "b", "2" },
         .{ .run = .{ .b = 2 } },
-    );
-    try expect(
-        &.{ "exe", "run", "c", "foo" },
-        .{ .run = .{ .c = .{ .filepath = "foo" } } },
     );
     try expect(
         &.{ "exe", "run", "c", "--filepath", "foo" },
@@ -167,6 +152,7 @@ test "Command" {
     }
     try expect(&.{ "exe", "opt", "null" }, .{ .opt = null });
     try expect(&.{ "exe", "opt", "foo" }, .{ .opt = "foo" });
+    try expect(&.{ "exe", "tuple", "1", "2" }, .{ .tuple = .{ 1, "2" } });
 }
 
 test "flags" {
@@ -475,7 +461,7 @@ test "rename long - struct" {
         };
     }, .{});
 
-    try testing.expectError(error.InvalidCharacter, P.parse(&.{ exe_path, "--foo", "1" }, .{}));
+    try testing.expectError(error.UnknownOption, P.parse(&.{ exe_path, "--foo", "1" }, .{}));
     const expect = expectFn(P);
     try expect(&.{ exe_path, "--bar", "1" }, .{ .foo = 1 });
 }

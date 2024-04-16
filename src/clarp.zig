@@ -109,9 +109,8 @@ pub fn caseKebab(buf: []u8, name: []const u8) []const u8 {
 ///
 /// union types describe alternative commands.
 ///
-/// struct types describe sequences of options.  their field names require
-/// leading dashes (ie --field-name).  when fields are named they may be given
-/// out of order.  unnamed values will be assigned to the next unset field.
+/// struct types describe named sequences of options.  their field names require
+/// leading dashes (ie --field-name).
 ///
 /// tuple types describe strictly unnamed sequences.
 ///
@@ -281,15 +280,18 @@ pub fn Parser(comptime T: type, comptime options: ParserOptions) type {
                         ct_ctx.outer_desc,
                     ),
                 ),
-                .Struct => return try parseStruct(
-                    V,
-                    ctx,
-                    CtCtx(V).init(
-                        field_name,
-                        ct_ctx.clarp_options,
-                        ct_ctx.outer_desc,
+                .Struct => |x| return if (x.is_tuple)
+                    try parseTuple(V, ctx)
+                else
+                    try parseStruct(
+                        V,
+                        ctx,
+                        CtCtx(V).init(
+                            field_name,
+                            ct_ctx.clarp_options,
+                            ct_ctx.outer_desc,
+                        ),
                     ),
-                ),
             }
         }
 
@@ -430,7 +432,7 @@ pub fn Parser(comptime T: type, comptime options: ParserOptions) type {
                         .end_mark => {
                             debug("found end_mark", .{});
                             args.* = args.*[1..];
-                            return payload;
+                            break :args;
                         },
                         .override => |override| {
                             debug("found override", .{});
@@ -510,33 +512,7 @@ pub fn Parser(comptime T: type, comptime options: ParserOptions) type {
                         }
                     }
 
-                    // positionals
-                    debug("parsing positional. fields seen {} arg {s}", .{ fields_seen.count(), args.*[0] });
-                    var iter = fields_seen.iterator(.{ .kind = .unset });
-                    const next_fieldi = iter.next() orelse {
-                        try logErr("extra args {s}\n", .{args.*}, parse_options.err_writer);
-                        return err(V, ctx, error.ExtraArgs);
-                    };
-                    inline for (fields, 0..) |f, fi| {
-                        if (fi == next_fieldi) {
-                            @field(payload, f.name) = try parsePayload(
-                                f.type,
-                                ctx,
-                                CtCtx(f.type).init(
-                                    f.name,
-                                    clarpOptions(f.type),
-                                    if (@hasDecl(V, "clarp_options"))
-                                        @field(V.clarp_options.fields, f.name).desc
-                                    else
-                                        null,
-                                ),
-                            );
-                            fields_seen.set(fi);
-                            continue :args;
-                        }
-                    }
-
-                    @panic("unreachable");
+                    return error.UnknownOption;
                 }
             }
 
@@ -572,7 +548,7 @@ pub fn Parser(comptime T: type, comptime options: ParserOptions) type {
             return payload;
         }
 
-        /// returns kv pair for each end_mark, override, derived short name, short, long name.
+        /// returns kv pair for each end_mark, override, derived short/short, long name.
         /// each pair has type struct{[]const u8, NamedOption(FieldEnum)}
         fn GenKvs(
             comptime V: type,
@@ -683,6 +659,33 @@ pub fn Parser(comptime T: type, comptime options: ParserOptions) type {
                 const ret = &kvs;
                 return ret;
             }
+        }
+
+        fn parseTuple(comptime V: type, ctx: Ctx) !V {
+            const info = @typeInfo(V);
+            const args = ctx.args;
+            const fields = info.Struct.fields;
+
+            var payload: V = initEmpty(V) catch undefined;
+            debug("parsing tuple. arg {s}", .{args.*[0]});
+
+            inline for (fields) |f| {
+                if (args.len == 0) return error.MissingFields;
+                @field(payload, f.name) = try parsePayload(
+                    f.type,
+                    ctx,
+                    CtCtx(f.type).init(
+                        f.name,
+                        clarpOptions(f.type),
+                        if (@hasDecl(V, "clarp_options"))
+                            @field(V.clarp_options.fields, f.name).desc
+                        else
+                            null,
+                    ),
+                );
+            }
+
+            return payload;
         }
 
         const Override = *const fn (*[]const []const u8, ?*anyopaque) void;

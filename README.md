@@ -23,7 +23,7 @@ Derive customizable command line parsers from union and struct types.  Provides 
 # Overview
 Union types create alternative commands.  Commands match field names exactly.
 
-Struct types create sequences of options.  Options match field names with leading dashes such as `--text_color` for field `text_color`.  Named options can be parsed out of order.  Unnamed, positional options will be assigned to the next unset field in field order.
+Struct types create sequences of options.  Options match field names with leading dashes such as `--text_color` for field `text_color`.  Named options can be parsed out of order.
 
 Tuple types create unnamed sequences and are parsed strictly by position.
 
