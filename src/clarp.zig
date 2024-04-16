@@ -19,6 +19,9 @@ pub const FieldOption = struct {
     help: ?[]const u8 = null,
     /// changes the option or command name. effectively renames the field.
     long: ?[]const u8 = null,
+    /// marks the field as positional. positional options may be unnamed.
+    /// only affects non-tuple structs.
+    positional: bool = false,
 };
 
 /// any struct or enum passed to `clarp.Parser()` may contain
@@ -447,7 +450,6 @@ pub fn Parser(comptime T: type, comptime options: ParserOptions) type {
                             try printHelp0(V, ctx, ct_ctx.outer_desc);
                             return error.HelpShown;
                         },
-
                         .end_mark => {
                             debug("found end_mark", .{});
                             args.* = args.*[1..];
@@ -485,52 +487,68 @@ pub fn Parser(comptime T: type, comptime options: ParserOptions) type {
                             unreachable;
                         },
                     }
-                } else {
-                    if (clarp_options.derive_short_names and
-                        mem.startsWith(u8, args.*[0], "-"))
-                    {
-                        // parse shorts with -abc syntax where
-                        // a, b, c are derived short field names
-                        var arg = args.*[0][1..];
-                        debug("arg {s} shorts {s}", .{ arg, std.meta.fieldNames(Short) });
-                        shorts: while (arg.len > 0) {
-                            inline for (@typeInfo(Short).Enum.fields, 0..) |f, fi| {
-                                if (isFlagType(fields[fi].type) and mem.startsWith(u8, arg, f.name)) {
-                                    const Ft = @TypeOf(@field(payload, fields[fi].name));
-                                    // construct a fake, single flag arg.  this allows bool fields to work
-                                    var tmp_args: []const []const u8 = &[_][]const u8{"--" ++ fields[fi].name};
-                                    @field(payload, fields[fi].name) = try parsePayload(
-                                        Ft,
-                                        Ctx.init(
-                                            init_args,
-                                            &tmp_args,
-                                            parse_options,
-                                        ),
-                                        CtCtx(Ft).init(
-                                            fields[fi].name,
-                                            clarpOptions(fields[fi].type),
-                                            if (@hasDecl(V, "clarp_options"))
-                                                @field(V.clarp_options.fields, fields[fi].name).desc
-                                            else
-                                                null,
-                                        ),
-                                    );
-                                    fields_seen.set(fi);
-                                    arg = arg[f.name.len..];
-                                    continue :shorts;
-                                }
-                            } else break;
-                        }
-
-                        if (arg.len == 0) {
-                            args.* = args.*[1..];
-                            continue :args;
-                        } else {
-                            try logErr("unknown short option(s) '{s}'\n", .{arg}, parse_options.err_writer);
-                            return err(V, ctx, error.UnknownOption);
-                        }
+                } else if (clarp_options.derive_short_names and
+                    mem.startsWith(u8, args.*[0], "-"))
+                {
+                    // parse shorts with -abc syntax where
+                    // a, b, c are derived short field names
+                    var arg = args.*[0][1..];
+                    debug("arg {s} shorts {s}", .{ arg, std.meta.fieldNames(Short) });
+                    shorts: while (arg.len > 0) {
+                        inline for (@typeInfo(Short).Enum.fields, 0..) |f, fi| {
+                            if (isFlagType(fields[fi].type) and mem.startsWith(u8, arg, f.name)) {
+                                const Ft = @TypeOf(@field(payload, fields[fi].name));
+                                // construct a fake, single flag arg.  this allows bool fields to work
+                                var tmp_args: []const []const u8 = &[_][]const u8{"--" ++ fields[fi].name};
+                                @field(payload, fields[fi].name) = try parsePayload(
+                                    Ft,
+                                    Ctx.init(
+                                        init_args,
+                                        &tmp_args,
+                                        parse_options,
+                                    ),
+                                    CtCtx(Ft).init(
+                                        fields[fi].name,
+                                        clarpOptions(fields[fi].type),
+                                        if (@hasDecl(V, "clarp_options"))
+                                            @field(V.clarp_options.fields, fields[fi].name).desc
+                                        else
+                                            null,
+                                    ),
+                                );
+                                fields_seen.set(fi);
+                                arg = arg[f.name.len..];
+                                continue :shorts;
+                            }
+                        } else break;
                     }
 
+                    if (arg.len == 0) {
+                        args.* = args.*[1..];
+                        continue :args;
+                    } else {
+                        try logErr("unknown short option(s) '{s}'\n", .{arg}, parse_options.err_writer);
+                        return err(V, ctx, error.UnknownOption);
+                    }
+                } else {
+                    var it = fields_seen.iterator(.{ .kind = .unset });
+                    if (it.next()) |field_idx| {
+                        inline for (fields, 0..) |f, i| {
+                            if (field_idx == i and @field(clarp_options.fields, f.name).positional) {
+                                @field(payload, f.name) = try parsePayload(
+                                    f.type,
+                                    ctx,
+                                    CtCtx(f.type).init(
+                                        f.name,
+                                        clarpOptions(f.type),
+                                        @field(V.clarp_options.fields, f.name).desc,
+                                    ),
+                                );
+                                fields_seen.set(i);
+                                continue :args;
+                            }
+                        }
+                    }
                     return error.UnknownOption;
                 }
             }

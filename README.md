@@ -5,7 +5,7 @@ Derive customizable command line parsers from union and struct types.  Provides 
 # Features
 
 * field types
-  * int, bool, enum, float, optional, array
+  * int, bool, enum, float, optional, array, slice
   * nested unions and structs
 * help / usage
   * automatically printed on parsing errors
@@ -23,11 +23,13 @@ Derive customizable command line parsers from union and struct types.  Provides 
 # Overview
 Union types create alternative commands.  Commands match field names exactly.
 
-Struct types create sequences of options.  Options match field names with leading dashes such as `--text_color` for field `text_color`.  Named options can be parsed out of order.
+Struct types create sequences of options.  Options match field names with leading dashes such as `--text_color` for field `text_color`.  Named options can be parsed out of order.  Unnamed, positional parsing may be enabled by setting `clarp_options.fields.field_name.positional`.
 
 Tuple types create unnamed sequences and are parsed strictly by position.
 
 Bool fields create 'flags' and may be specified as `--flag` or `true`/`false` when unnamed.  They are always optional and default to false.
+
+Slice fields require an allocator and consume input until an argument is found which starts with '-' or end of arguments.  Allocator may be provided via `ParseOptions.allocator`.
 
 ## Zig version
 This package was developed against zig version 0.12.0-dev.3594+355cceebc
@@ -169,14 +171,6 @@ $ zig-out/bin/testexe c2 b
 
 cmd2: 
   0: b
-```
-#### No name
-Unnamed options are assigned to the next unset field in field declaration order.
-```console
-$ zig-out/bin/testexe c1 'opt1 value'
-
-cmd1: 
-  foo: "opt1 value"
 ```
 #### Diagnostics
 ```console

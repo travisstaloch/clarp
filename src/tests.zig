@@ -594,5 +594,20 @@ test "allocate slice field" {
     defer r.deinit(talloc);
     try testing.expectEqualSlices([]const u8, &.{ "a", "b", "c" }, r.root.files);
     try testing.expectEqual(1, r.root.b);
-    std.debug.print("{help}\n", .{r});
+
+test "positional field" {
+    const P = clarp.Parser(struct {
+        files: []const []const u8,
+        b: u8,
+        pub const clarp_options = Options(@This()){
+            .fields = .{ .files = .{ .positional = true } },
+        };
+    }, .{});
+    try testing.expectError(error.AllocatorRequired, P.parse(&.{ exe_path, "a" }, .{}));
+    // successfully parse 'positional' field but 'b' field missing and must free slice
+    try testing.expectError(error.MissingFields, P.parse(&.{ exe_path, "a" }, .{ .allocator = talloc }));
+    var r = try P.parse(&.{ exe_path, "a", "b", "c", "--b", "1" }, .{ .allocator = talloc });
+    defer r.deinit(talloc);
+    try testing.expectEqualSlices([]const u8, &.{ "a", "b", "c" }, r.root.files);
+    try testing.expectEqual(1, r.root.b);
 }

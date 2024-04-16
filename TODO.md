@@ -36,3 +36,5 @@
 - [x] clean up repetitive 'orelse std.io.getStdErr().writer().any()'
   - [x] make err_writer default to io.null_writer instead of being optional
 - [x] parsePayload() has too many args. make Ctx type.
+- [x] support slice types which need to allocate
+- [x] support positional parsing in struct fields via FieldOption.positional
