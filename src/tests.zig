@@ -71,89 +71,89 @@ const talloc = testing.allocator;
 const exe_path = "/path/to/exe";
 
 test "Command" {
-    try testing.expectError(error.UnknownCommand, TestParser.parse(&.{ "exe", "asdf" }, .{}));
-    try testing.expectError(error.ExtraArgs, TestParser.parse(&.{ "exe", "decode", "1", "2", "3" }, .{}));
+    try testing.expectError(error.UnknownCommand, TestParser.parse(&.{ exe_path, "asdf" }, .{}));
+    try testing.expectError(error.ExtraArgs, TestParser.parse(&.{ exe_path, "decode", "1", "2", "3" }, .{}));
     try testing.expectError(error.NotEnoughArgs, TestParser.parse(&.{"exe"}, .{}));
-    try testing.expectError(error.UnknownOption, TestParser.parse(&.{ "exe", "handshake", "foo", "bar" }, .{}));
-    try testing.expectError(error.UnknownOption, TestParser.parse(&.{ "exe", "info", "foo" }, .{}));
-    try testing.expectError(error.UnknownOption, TestParser.parse(&.{ "exe", "handshake", "--peer_address", "foo", "bar" }, .{}));
-    try testing.expectError(error.UnknownOption, TestParser.parse(&.{ "exe", "defaults", "a", "true" }, .{}));
-    try testing.expectError(error.UnknownOption, TestParser.parse(&.{ "exe", "defaults", "a", "true", "42" }, .{}));
-    try testing.expectError(error.UnknownOption, TestParser.parse(&.{ "exe", "defaults", "a", "false", "42" }, .{}));
-    try testing.expectError(error.UnknownOption, TestParser.parse(&.{ "exe", "run", "c", "foo" }, .{}));
-    try testing.expectError(error.NotEnoughArgs, TestParser.parse(&.{ "exe", "tuple" }, .{}));
-    try testing.expectError(error.ExtraArgs, TestParser.parse(&.{ "exe", "tuple", "1", "2", "3" }, .{}));
+    try testing.expectError(error.UnknownOption, TestParser.parse(&.{ exe_path, "handshake", "foo", "bar" }, .{}));
+    try testing.expectError(error.UnknownOption, TestParser.parse(&.{ exe_path, "info", "foo" }, .{}));
+    try testing.expectError(error.UnknownOption, TestParser.parse(&.{ exe_path, "handshake", "--peer_address", "foo", "bar" }, .{}));
+    try testing.expectError(error.UnknownOption, TestParser.parse(&.{ exe_path, "defaults", "a", "true" }, .{}));
+    try testing.expectError(error.UnknownOption, TestParser.parse(&.{ exe_path, "defaults", "a", "true", "42" }, .{}));
+    try testing.expectError(error.UnknownOption, TestParser.parse(&.{ exe_path, "defaults", "a", "false", "42" }, .{}));
+    try testing.expectError(error.UnknownOption, TestParser.parse(&.{ exe_path, "run", "c", "foo" }, .{}));
+    try testing.expectError(error.NotEnoughArgs, TestParser.parse(&.{ exe_path, "tuple" }, .{}));
+    try testing.expectError(error.ExtraArgs, TestParser.parse(&.{ exe_path, "tuple", "1", "2", "3" }, .{}));
 
     const expect = expectFn(TestParser);
-    try expect(&.{ "exe", "decode", "foo" }, .{ .decode = .{"foo"} });
+    try expect(&.{ exe_path, "decode", "foo" }, .{ .decode = .{"foo"} });
     try expect(
-        &.{ "exe", "info", "--filepath", "foo" },
+        &.{ exe_path, "info", "--filepath", "foo" },
         .{ .info = .{ .filepath = "foo" } },
     );
 
     try expect(
-        &.{ "exe", "handshake", "--peer_address", "foo", "--filepath", "bar" },
+        &.{ exe_path, "handshake", "--peer_address", "foo", "--filepath", "bar" },
         .{ .handshake = .{ .filepath = "bar", .peer_address = "foo" } },
     );
     try expect(
-        &.{ "exe", "download", "-o", "foo", "--piece_index", "22" },
+        &.{ exe_path, "download", "-o", "foo", "--piece_index", "22" },
         .{ .download = .{ .piece_index = 22, .outpath = "foo" } },
     );
     try expect(
-        &.{ "exe", "download", "--outpath", "foo", "--piece_index", "22" },
+        &.{ exe_path, "download", "--outpath", "foo", "--piece_index", "22" },
         .{ .download = .{ .piece_index = 22, .outpath = "foo" } },
     );
     try expect(
-        &.{ "exe", "download", "--piece_index", "22", "-o", "foo" },
+        &.{ exe_path, "download", "--piece_index", "22", "-o", "foo" },
         .{ .download = .{ .piece_index = 22, .outpath = "foo" } },
     );
     try expect(
-        &.{ "exe", "defaults" },
+        &.{ exe_path, "defaults" },
         .{ .defaults = .{ .blip = false } },
     );
     try expect(
-        &.{ "exe", "defaults", "--int", "42" },
+        &.{ exe_path, "defaults", "--int", "42" },
         .{ .defaults = .{ .int = 42, .blip = false } },
     );
     try expect(
-        &.{ "exe", "defaults", "--baz" },
+        &.{ exe_path, "defaults", "--baz" },
         .{ .defaults = .{ .baz = true, .blip = false } },
     );
     try expect(
-        &.{ "exe", "defaults", "--enyum", "delish" },
+        &.{ exe_path, "defaults", "--enyum", "delish" },
         .{ .defaults = .{ .enyum = .delish, .blip = false } },
     );
     try expect(
-        &.{ "exe", "run", "a", "1" },
+        &.{ exe_path, "run", "a", "1" },
         .{ .run = .{ .a = 1 } },
     );
     try expect(
-        &.{ "exe", "run", "b", "2" },
+        &.{ exe_path, "run", "b", "2" },
         .{ .run = .{ .b = 2 } },
     );
     try expect(
-        &.{ "exe", "run", "c", "--filepath", "foo" },
+        &.{ exe_path, "run", "c", "--filepath", "foo" },
         .{ .run = .{ .c = .{ .filepath = "foo" } } },
     );
     try expect(
-        &.{ "exe", "run", "d" },
+        &.{ exe_path, "run", "d" },
         .{ .run = .d },
     );
     try expect(
-        &.{ "exe", "run", "e", "0.999" },
+        &.{ exe_path, "run", "e", "0.999" },
         .{ .run = .{ .e = 0.999 } },
     );
     try expect(
-        &.{ "exe", "run", "f", "b" },
+        &.{ exe_path, "run", "f", "b" },
         .{ .run = .{ .f = .b } },
     );
     {
-        const x = try TestParser.parse(&.{ "exe", "run", "arr", "foo" }, .{});
+        const x = try TestParser.parse(&.{ exe_path, "run", "arr", "foo" }, .{});
         try testing.expectEqualStrings("foo", x.root.run.arr[0..3]);
     }
-    try expect(&.{ "exe", "opt", "null" }, .{ .opt = null });
-    try expect(&.{ "exe", "opt", "foo" }, .{ .opt = "foo" });
-    try expect(&.{ "exe", "tuple", "1", "2" }, .{ .tuple = .{ 1, "2" } });
+    try expect(&.{ exe_path, "opt", "null" }, .{ .opt = null });
+    try expect(&.{ exe_path, "opt", "foo" }, .{ .opt = "foo" });
+    try expect(&.{ exe_path, "tuple", "1", "2" }, .{ .tuple = .{ 1, "2" } });
 }
 
 test "flags" {
@@ -188,7 +188,7 @@ test "overrides" {
         };
     }, .{});
 
-    _ = try P.parse(&.{ "exe", "--foo", "99", "--", "bar", "100" }, .{ .user_ctx = &ctx });
+    _ = try P.parse(&.{ exe_path, "--foo", "99", "--", "bar", "100" }, .{ .user_ctx = &ctx });
 
     try testing.expectEqual(99, ctx.foo);
     try testing.expectEqual(100, ctx.bar);
@@ -587,13 +587,14 @@ test "allocate slice field" {
         files: []const []const u8,
         b: u8,
     }, .{});
-    try testing.expectError(error.AllocatorRequired, P.parse(&.{ "exe", "--files", "a" }, .{}));
+    try testing.expectError(error.AllocatorRequired, P.parse(&.{ exe_path, "--files", "a" }, .{}));
     // successfully parse 'files' field but 'b' field missing and must free slice
-    try testing.expectError(error.MissingFields, P.parse(&.{ "exe", "--files", "a" }, .{ .allocator = talloc }));
+    try testing.expectError(error.MissingFields, P.parse(&.{ exe_path, "--files", "a" }, .{ .allocator = talloc }));
     var r = try P.parse(&.{ exe_path, "--files", "a", "b", "c", "--b", "1" }, .{ .allocator = talloc });
     defer r.deinit(talloc);
     try testing.expectEqualSlices([]const u8, &.{ "a", "b", "c" }, r.root.files);
     try testing.expectEqual(1, r.root.b);
+}
 
 test "positional field" {
     const P = clarp.Parser(struct {
