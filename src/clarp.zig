@@ -531,22 +531,29 @@ pub fn Parser(comptime T: type, comptime options: ParserOptions) type {
                         return err(V, ctx, error.UnknownOption);
                     }
                 } else {
+                    // handle positional fields
                     var it = fields_seen.iterator(.{ .kind = .unset });
-                    if (it.next()) |field_idx| {
-                        inline for (fields, 0..) |f, i| {
-                            if (field_idx == i and @field(clarp_options.fields, f.name).positional) {
-                                @field(payload, f.name) = try parsePayload(
-                                    f.type,
-                                    ctx,
-                                    CtCtx(f.type).init(
-                                        f.name,
-                                        clarpOptions(f.type),
-                                        @field(V.clarp_options.fields, f.name).desc,
-                                    ),
-                                );
-                                fields_seen.set(i);
-                                continue :args;
-                            }
+                    while (it.next()) |field_idx| {
+                        const fe: FieldEnum = @enumFromInt(field_idx);
+                        if (@typeInfo(FieldEnum).Enum.fields.len == 0) continue;
+                        switch (fe) {
+                            inline else => |tag| {
+                                const name = @tagName(tag);
+                                const Ft = std.meta.FieldType(V, tag);
+                                if (@field(clarp_options.fields, name).positional) {
+                                    @field(payload, name) = try parsePayload(
+                                        Ft,
+                                        ctx,
+                                        CtCtx(Ft).init(
+                                            name,
+                                            clarpOptions(Ft),
+                                            @field(V.clarp_options.fields, name).desc,
+                                        ),
+                                    );
+                                    fields_seen.set(field_idx);
+                                    continue :args;
+                                }
+                            },
                         }
                     }
                     return error.UnknownOption;

@@ -54,7 +54,7 @@ fn ExpectFn(comptime P: type) type {
 fn expectFn(comptime P: type) ExpectFn(P) {
     return struct {
         fn func(args: []const []const u8, expected: P.Root) anyerror!void {
-            const x = try P.parse(args, .{});
+            const x = try P.parse(args, .{ .allocator = talloc });
             defer x.deinit(talloc);
             // exercise dump() and help() to catch compile errors
             try P.dump(x, "", .{}, std.io.null_writer, 0);
@@ -71,18 +71,54 @@ const talloc = testing.allocator;
 const exe_path = "/path/to/exe";
 
 test "Command" {
-    try testing.expectError(error.UnknownCommand, TestParser.parse(&.{ exe_path, "asdf" }, .{}));
-    try testing.expectError(error.ExtraArgs, TestParser.parse(&.{ exe_path, "decode", "1", "2", "3" }, .{}));
-    try testing.expectError(error.NotEnoughArgs, TestParser.parse(&.{"exe"}, .{}));
-    try testing.expectError(error.UnknownOption, TestParser.parse(&.{ exe_path, "handshake", "foo", "bar" }, .{}));
-    try testing.expectError(error.UnknownOption, TestParser.parse(&.{ exe_path, "info", "foo" }, .{}));
-    try testing.expectError(error.UnknownOption, TestParser.parse(&.{ exe_path, "handshake", "--peer_address", "foo", "bar" }, .{}));
-    try testing.expectError(error.UnknownOption, TestParser.parse(&.{ exe_path, "defaults", "a", "true" }, .{}));
-    try testing.expectError(error.UnknownOption, TestParser.parse(&.{ exe_path, "defaults", "a", "true", "42" }, .{}));
-    try testing.expectError(error.UnknownOption, TestParser.parse(&.{ exe_path, "defaults", "a", "false", "42" }, .{}));
-    try testing.expectError(error.UnknownOption, TestParser.parse(&.{ exe_path, "run", "c", "foo" }, .{}));
-    try testing.expectError(error.NotEnoughArgs, TestParser.parse(&.{ exe_path, "tuple" }, .{}));
-    try testing.expectError(error.ExtraArgs, TestParser.parse(&.{ exe_path, "tuple", "1", "2", "3" }, .{}));
+    try testing.expectError(
+        error.UnknownCommand,
+        TestParser.parse(&.{ exe_path, "asdf" }, .{}),
+    );
+    try testing.expectError(
+        error.ExtraArgs,
+        TestParser.parse(&.{ exe_path, "decode", "1", "2", "3" }, .{}),
+    );
+    try testing.expectError(
+        error.NotEnoughArgs,
+        TestParser.parse(&.{"exe"}, .{}),
+    );
+    try testing.expectError(
+        error.UnknownOption,
+        TestParser.parse(&.{ exe_path, "handshake", "foo", "bar" }, .{}),
+    );
+    try testing.expectError(
+        error.UnknownOption,
+        TestParser.parse(&.{ exe_path, "info", "foo" }, .{}),
+    );
+    try testing.expectError(
+        error.UnknownOption,
+        TestParser.parse(&.{ exe_path, "handshake", "--peer_address", "foo", "bar" }, .{}),
+    );
+    try testing.expectError(
+        error.UnknownOption,
+        TestParser.parse(&.{ exe_path, "defaults", "a", "true" }, .{}),
+    );
+    try testing.expectError(
+        error.UnknownOption,
+        TestParser.parse(&.{ exe_path, "defaults", "a", "true", "42" }, .{}),
+    );
+    try testing.expectError(
+        error.UnknownOption,
+        TestParser.parse(&.{ exe_path, "defaults", "a", "false", "42" }, .{}),
+    );
+    try testing.expectError(
+        error.UnknownOption,
+        TestParser.parse(&.{ exe_path, "run", "c", "foo" }, .{}),
+    );
+    try testing.expectError(
+        error.NotEnoughArgs,
+        TestParser.parse(&.{ exe_path, "tuple" }, .{}),
+    );
+    try testing.expectError(
+        error.ExtraArgs,
+        TestParser.parse(&.{ exe_path, "tuple", "1", "2", "3" }, .{}),
+    );
 
     const expect = expectFn(TestParser);
     try expect(&.{ exe_path, "decode", "foo" }, .{ .decode = .{"foo"} });
@@ -414,8 +450,14 @@ test "array" {
     }, .{});
 
     const expect = expectFn(P);
-    try testing.expectError(error.NotEnoughArgs, P.parse(&.{ exe_path, "--arr", "0", "1" }, .{}));
-    try testing.expectError(error.ExtraArgs, P.parse(&.{ exe_path, "--arr", "0", "1", "2", "3" }, .{}));
+    try testing.expectError(
+        error.NotEnoughArgs,
+        P.parse(&.{ exe_path, "--arr", "0", "1" }, .{}),
+    );
+    try testing.expectError(
+        error.ExtraArgs,
+        P.parse(&.{ exe_path, "--arr", "0", "1", "2", "3" }, .{}),
+    );
     try expect(&.{ exe_path, "--arr", "0", "1", "2" }, .{ .arr = .{ 0, 1, 2 } });
 }
 
@@ -589,8 +631,14 @@ test "allocate slice field" {
     }, .{});
     try testing.expectError(error.AllocatorRequired, P.parse(&.{ exe_path, "--files", "a" }, .{}));
     // successfully parse 'files' field but 'b' field missing and must free slice
-    try testing.expectError(error.MissingFields, P.parse(&.{ exe_path, "--files", "a" }, .{ .allocator = talloc }));
-    var r = try P.parse(&.{ exe_path, "--files", "a", "b", "c", "--b", "1" }, .{ .allocator = talloc });
+    try testing.expectError(
+        error.MissingFields,
+        P.parse(&.{ exe_path, "--files", "a" }, .{ .allocator = talloc }),
+    );
+    var r = try P.parse(
+        &.{ exe_path, "--files", "a", "b", "c", "--b", "1" },
+        .{ .allocator = talloc },
+    );
     defer r.deinit(talloc);
     try testing.expectEqualSlices([]const u8, &.{ "a", "b", "c" }, r.root.files);
     try testing.expectEqual(1, r.root.b);
@@ -606,9 +654,95 @@ test "positional field" {
     }, .{});
     try testing.expectError(error.AllocatorRequired, P.parse(&.{ exe_path, "a" }, .{}));
     // successfully parse 'positional' field but 'b' field missing and must free slice
-    try testing.expectError(error.MissingFields, P.parse(&.{ exe_path, "a" }, .{ .allocator = talloc }));
-    var r = try P.parse(&.{ exe_path, "a", "b", "c", "--b", "1" }, .{ .allocator = talloc });
-    defer r.deinit(talloc);
-    try testing.expectEqualSlices([]const u8, &.{ "a", "b", "c" }, r.root.files);
-    try testing.expectEqual(1, r.root.b);
+    try testing.expectError(
+        error.MissingFields,
+        P.parse(&.{ exe_path, "a" }, .{ .allocator = talloc }),
+    );
+    {
+        var r = try P.parse(
+            &.{ exe_path, "a", "b", "c", "--b", "1" },
+            .{ .allocator = talloc },
+        );
+        defer r.deinit(talloc);
+        try testing.expectEqualSlices([]const u8, &.{ "a", "b", "c" }, r.root.files);
+        try testing.expectEqual(1, r.root.b);
+    }
+    {
+        var r = try P.parse(
+            &.{ exe_path, "--b", "1", "a", "b", "c" },
+            .{ .allocator = talloc },
+        );
+        defer r.deinit(talloc);
+        try testing.expectEqualSlices([]const u8, &.{ "a", "b", "c" }, r.root.files);
+        try testing.expectEqual(1, r.root.b);
+    }
+}
+
+test "command with positional" {
+    const P = clarp.Parser(union(enum) {
+        mycmd: struct {
+            files: []const []const u8,
+            foo: bool,
+            bar: bool,
+            pub const clarp_options = Options(@This()){
+                .fields = .{ .files = .{ .positional = true } },
+            };
+        },
+    }, .{});
+    // slice field args must be consecutive
+    try testing.expectError(error.UnknownOption, P.parse(
+        &.{ exe_path, "mycmd", "file.txt", "--foo", "image.png" },
+        .{ .allocator = talloc },
+    ));
+    const expect = expectFn(P);
+    try expect(
+        &.{ exe_path, "mycmd", "file.txt", "image.png", "--foo", "--bar" },
+        .{ .mycmd = .{ .files = &.{ "file.txt", "image.png" }, .foo = true, .bar = true } },
+    );
+    try expect(
+        &.{ exe_path, "mycmd", "--foo", "file.txt", "image.png", "--bar" },
+        .{ .mycmd = .{ .files = &.{ "file.txt", "image.png" }, .foo = true, .bar = true } },
+    );
+    try expect(
+        &.{ exe_path, "mycmd", "--bar", "--foo", "file.txt", "image.png" },
+        .{ .mycmd = .{ .files = &.{ "file.txt", "image.png" }, .foo = true, .bar = true } },
+    );
+    try expect(
+        &.{ exe_path, "mycmd", "file.txt", "image.png" },
+        .{ .mycmd = .{ .files = &.{ "file.txt", "image.png" }, .foo = false, .bar = false } },
+    );
+}
+
+test "command with positional - different field order" {
+    const P = clarp.Parser(union(enum) {
+        mycmd: struct {
+            foo: bool,
+            files: []const []const u8,
+            bar: bool,
+            pub const clarp_options = Options(@This()){
+                .fields = .{ .files = .{ .positional = true } },
+            };
+        },
+    }, .{});
+    try testing.expectError(error.UnknownOption, P.parse(
+        &.{ exe_path, "mycmd", "file.txt", "--foo", "image.png" },
+        .{ .allocator = talloc },
+    ));
+    const expect = expectFn(P);
+    try expect(
+        &.{ exe_path, "mycmd", "file.txt", "image.png", "--foo", "--bar" },
+        .{ .mycmd = .{ .files = &.{ "file.txt", "image.png" }, .foo = true, .bar = true } },
+    );
+    try expect(
+        &.{ exe_path, "mycmd", "--foo", "file.txt", "image.png", "--bar" },
+        .{ .mycmd = .{ .files = &.{ "file.txt", "image.png" }, .foo = true, .bar = true } },
+    );
+    try expect(
+        &.{ exe_path, "mycmd", "--bar", "--foo", "file.txt", "image.png" },
+        .{ .mycmd = .{ .files = &.{ "file.txt", "image.png" }, .foo = true, .bar = true } },
+    );
+    try expect(
+        &.{ exe_path, "mycmd", "file.txt", "image.png" },
+        .{ .mycmd = .{ .files = &.{ "file.txt", "image.png" }, .foo = false, .bar = false } },
+    );
 }

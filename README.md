@@ -23,7 +23,7 @@ Derive customizable command line parsers from union and struct types.  Provides 
 # Overview
 Union types create alternative commands.  Commands match field names exactly.
 
-Struct types create sequences of options.  Options match field names with leading dashes such as `--text_color` for field `text_color`.  Named options can be parsed out of order.  Unnamed, positional parsing may be enabled by setting `clarp_options.fields.field_name.positional`.
+Struct types create sequences of options.  Options match field names with leading dashes such as `--text_color` for field `text_color`.  Named options can be parsed out of order.  Unnamed, positional parsing may be enabled by setting `clarp_options.fields.<field_name>.positional`.
 
 Tuple types create unnamed sequences and are parsed strictly by position.
 
@@ -54,8 +54,7 @@ This will add the following
 },
 ```
 
-#### Modify build.zig
-see [here](build.zig#L26)
+#### Modify [build.zig](build.zig#L26)
 
 ```zig
 // build.zig
@@ -107,14 +106,17 @@ pub fn main() !void {
 }
 ```
 
-## [clarp_options](src/clarp.zig#L24)
+## [clarp_options](src/clarp.zig#L29)
 When a struct or union contains a `pub const clarp_options` declaration, it changes parsing behavior.  Nested structs and unions may declare their own `clarp_options`.
 
-## [ParserOptions](src/clarp.zig#L59)
-These are comptime global parsing options. The second argument to clarp.Parser().
+## [ParseOptions](src/clarp.zig#L59)
+Runtime parsing options. The second argument to `clarp.Parser(T).parse()`.
+
+## [ParserOptions](src/clarp.zig#L66)
+Comptime global parsing options. The second argument to `clarp.Parser()`.
 
 ### help flags
-By default, if an arg is `help`, `--help` or `-h` context aware usage is displayed.  You may change the help flags by passing an enum type as `ParserOptions.help_type`.
+By default, if an arg is `help`, `--help` or `-h` context aware usage is displayed.  You may change the help flags by passing an enum type for `ParserOptions.help_type`.
 
 ```console
 $ zig-out/bin/testexe help
@@ -130,9 +132,9 @@ General Options:
   help, --help, -h    Print command specific usage.
 ```
 
-Notice how this message is derived from the enum above and that its `clarp_options` declaration affects the output, adding the `c1` and `c2` shorts and descriptions.
+Notice how this message is derived from the `union(enum)` passed to `clarp.Parser()` above and that its `clarp_options` declaration affects the output, adding the `c1` and `c2` shorts and descriptions.
 
-To see help for cmd1:
+### Command specific help
 
 ```console
 $ zig-out/bin/testexe cmd1 help
@@ -150,7 +152,7 @@ General Options:
 ```
 
 ## Command line examples
-These simple examples show the `ArgParser` we defined above in [Full Example](#full-example) in action.
+Here are some results from the `ArgParser` we defined above in [Full Example](#full-example).
 
 #### Long names
 ```console
