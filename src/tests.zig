@@ -53,7 +53,7 @@ fn ExpectFn(comptime P: type) type {
 fn expectFn(comptime P: type) ExpectFn(P) {
     return struct {
         fn func(args: []const []const u8, expected: P.Root) anyerror!void {
-            const x = try P.parse(args, quiet_opts);
+            const x = try P.parse(args, .{});
             // exercise dump() and help() to catch compile errors
             try P.dump(x, "", .{}, std.io.null_writer, 0);
             try x.dump("", .{}, std.io.null_writer, 0);
@@ -67,12 +67,11 @@ fn expectFn(comptime P: type) ExpectFn(P) {
 const testing = std.testing;
 const talloc = testing.allocator;
 const exe_path = "/path/to/exe";
-const quiet_opts = .{ .err_writer = std.io.null_writer.any() };
 
 test "Command" {
-    try testing.expectError(error.UnknownCommand, TestParser.parse(&.{ "exe", "asdf" }, quiet_opts));
-    try testing.expectError(error.ExtraArgs, TestParser.parse(&.{ "exe", "decode", "1", "2", "3" }, quiet_opts));
-    try testing.expectError(error.NotEnoughArgs, TestParser.parse(&.{"exe"}, quiet_opts));
+    try testing.expectError(error.UnknownCommand, TestParser.parse(&.{ "exe", "asdf" }, .{}));
+    try testing.expectError(error.ExtraArgs, TestParser.parse(&.{ "exe", "decode", "1", "2", "3" }, .{}));
+    try testing.expectError(error.NotEnoughArgs, TestParser.parse(&.{"exe"}, .{}));
 
     const expect = expectFn(TestParser);
 
@@ -229,40 +228,6 @@ const SimpleOptions = clarp.Parser(struct {
 test SimpleOptions {
     const expect = expectFn(SimpleOptions);
     try expect(&.{ exe_path, "--opt1", "foo" }, .{ .opt1 = "foo", .opt2 = .a });
-}
-
-pub const std_options = std.Options{ .log_level = .warn };
-pub fn main() !void {
-    var arena = std.heap.ArenaAllocator.init(std.heap.page_allocator);
-    defer arena.deinit();
-    const allocator = arena.allocator();
-
-    const S = clarp.Parser(union(enum) {
-        cmd1: struct {
-            foo: u8,
-            bar: bool,
-            pub const clarp_options = Options(@This()){
-                .fields = .{
-                    .foo = .{ .desc = "Foo desc." },
-                    .bar = .{ .desc = "Bar desc." },
-                },
-            };
-        },
-        cmd2: struct { enum { a, b } = .a },
-        pub const clarp_options = Options(@This()){
-            .fields = .{
-                .cmd1 = .{ .desc = "Cmd1 desc.", .short = "c1" },
-                .cmd2 = .{ .desc = "Cmd2 desc.", .short = "c2" },
-            },
-        };
-    }, .{ .help_flags = enum { @"--help", @"-h" } });
-
-    const args = try std.process.argsAlloc(allocator);
-    const opts = S.parse(args, .{}) catch |e| switch (e) {
-        error.HelpShown => return,
-        else => return e,
-    };
-    std.debug.print("{}\n", .{opts});
 }
 
 test "derive_short_names - struct" {
@@ -462,8 +427,8 @@ test "array" {
     }, .{});
 
     const expect = expectFn(P);
-    try testing.expectError(error.NotEnoughArgs, P.parse(&.{ exe_path, "--arr", "0", "1" }, quiet_opts));
-    try testing.expectError(error.ExtraArgs, P.parse(&.{ exe_path, "--arr", "0", "1", "2", "3" }, quiet_opts));
+    try testing.expectError(error.NotEnoughArgs, P.parse(&.{ exe_path, "--arr", "0", "1" }, .{}));
+    try testing.expectError(error.ExtraArgs, P.parse(&.{ exe_path, "--arr", "0", "1", "2", "3" }, .{}));
     try expect(&.{ exe_path, "--arr", "0", "1", "2" }, .{ .arr = .{ 0, 1, 2 } });
 }
 
@@ -476,7 +441,7 @@ test "derived shorts + short" {
         };
     }, .{});
 
-    try testing.expectError(error.UnknownOption, P.parse(&.{ exe_path, "-a", "1" }, quiet_opts));
+    try testing.expectError(error.UnknownOption, P.parse(&.{ exe_path, "-a", "1" }, .{}));
     const expect = expectFn(P);
     try expect(&.{ exe_path, "-aa", "1" }, .{ .aaa = 1 });
     try expect(&.{ exe_path, "--aaa", "1" }, .{ .aaa = 1 });
@@ -510,7 +475,7 @@ test "rename long - struct" {
         };
     }, .{});
 
-    try testing.expectError(error.InvalidCharacter, P.parse(&.{ exe_path, "--foo", "1" }, quiet_opts));
+    try testing.expectError(error.InvalidCharacter, P.parse(&.{ exe_path, "--foo", "1" }, .{}));
     const expect = expectFn(P);
     try expect(&.{ exe_path, "--bar", "1" }, .{ .foo = 1 });
 }
@@ -523,7 +488,7 @@ test "rename long - union" {
         };
     }, .{});
 
-    try testing.expectError(error.UnknownCommand, P.parse(&.{ exe_path, "foo", "1" }, quiet_opts));
+    try testing.expectError(error.UnknownCommand, P.parse(&.{ exe_path, "foo", "1" }, .{}));
     const expect = expectFn(P);
     try expect(&.{ exe_path, "bar", "1" }, .{ .foo = 1 });
 }

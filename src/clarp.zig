@@ -89,7 +89,7 @@ pub const UserParseFn = fn (args: *[]const []const u8, ctx: ?*anyopaque) void;
 
 pub const ParseOptions = struct {
     user_ctx: ?*anyopaque = null,
-    err_writer: ?std.io.AnyWriter = null,
+    err_writer: std.io.AnyWriter = std.io.null_writer.any(),
 };
 
 fn logErr(comptime fmt: anytype, args: anytype, writer: ?std.io.AnyWriter) !void {
@@ -149,8 +149,7 @@ pub fn Parser(comptime T: type, comptime options: ParserOptions) type {
             var rest = args[1..];
             const root = parsePayload(args, &rest, T, null, parse_options, clarp_options, null) catch |e| {
                 if (e == error.HelpShown) return e;
-                const err_writer = parse_options.err_writer orelse std.io.getStdErr().writer().any();
-                try printError(err_writer, args, rest);
+                try printError(parse_options.err_writer, args, rest);
                 return e;
             };
             return if (rest.len != 0)
@@ -175,8 +174,7 @@ pub fn Parser(comptime T: type, comptime options: ParserOptions) type {
                     V,
                     init_args,
                     args,
-                    parse_options.err_writer orelse
-                        std.io.getStdErr().writer().any(),
+                    parse_options.err_writer,
                 ) catch {};
             }
 
@@ -317,9 +315,7 @@ pub fn Parser(comptime T: type, comptime options: ParserOptions) type {
             parse_options: ParseOptions,
             comptime outer_desc: ?[]const u8,
         ) !void {
-            const writer = parse_options.err_writer orelse
-                std.io.getStdErr().writer().any();
-
+            const writer = parse_options.err_writer;
             const has_options = @hasDecl(V, "clarp_options");
             const has_help = has_options and V.clarp_options.help != null;
             if (!has_help) {
@@ -787,14 +783,7 @@ pub fn Parser(comptime T: type, comptime options: ParserOptions) type {
         ) !void {
             const V = @TypeOf(v);
             switch (@typeInfo(V)) {
-                else => |x| if (comptime isZigString(V))
-                    try writer.writeAll(v)
-                else if (x == .Pointer and x.Pointer.size == .One) {
-                    if (V == *anyopaque)
-                        try writer.print("{*}", .{v})
-                    else
-                        try dump(v.*, fmt, fmt_opts, writer, depth);
-                } else @compileError("TODO " ++ @tagName(x) ++ " " ++ @typeName(V)),
+                else => |x| @compileError("TODO " ++ @tagName(x) ++ " " ++ @typeName(V)),
                 .Void => {},
                 .Int, .Bool, .Float => try std.fmt.formatType(v, fmt, fmt_opts, writer, 0),
                 .Array => try std.fmt.formatType(v, "any", fmt_opts, writer, 0),
@@ -805,8 +794,16 @@ pub fn Parser(comptime T: type, comptime options: ParserOptions) type {
                 .Pointer => |x| if (x.child == anyopaque)
                     try dump(v, "*", fmt_opts, writer, depth)
                 else switch (x.size) {
-                    .Slice => try std.fmt.formatType(v, "any", fmt_opts, writer, 0),
-                    .One => try dump(v.*, fmt, fmt_opts, writer, depth),
+                    .Slice => if (comptime isZigString(V))
+                        try writer.print(
+                            \\"{s}"
+                        , .{v})
+                    else
+                        try std.fmt.formatType(v, "any", fmt_opts, writer, 0),
+                    .One => if (V == *anyopaque)
+                        try writer.print("{*}", .{v})
+                    else
+                        try dump(v.*, fmt, fmt_opts, writer, depth),
                     else => @compileError("TODO " ++ @tagName(x) ++ " " ++ @typeName(V)),
                 },
                 .Enum => try writer.writeAll(@tagName(v)),

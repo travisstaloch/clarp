@@ -1,0 +1,38 @@
+# Todo
+- [x] document commands
+- [x] validate that all options don't collide
+  - [x] use comptime string map of all possible options and compile error if duplicate keys are found.
+  - [x] do same for unions/commands
+- [x] add Option to derive shorts
+- [x] support 'end of sequence' marker. default '--end-field_name'
+  - [x] allow user to override via struct `pub const end_mark = "--foo"`
+- [x] parse options
+  - [x] add user_ctx to options, default null
+  - [x] pass errwriter: io.AnyWriter to parse, default stderr
+- [x] option to use kebab case
+- [ ] overrides
+  - [ ] allow to mutate `seen_fields` by passing to `UserParseFn`
+- [x] unify error writing. currently using log.err, stderr, err_writer. these should be one.
+  - [x] use ParseOptions.err_writer
+- [x] allow collapsing several shorts into one i.e. '-ab' instead of '-a -b'
+- help text
+  - [x] override text by field
+  - [x] override entire help text
+  - [x] print aligned table - choose min alignment + allow user to override
+    - [x] break to next line if too long
+  - [x] improve default from generic 'Usage: exe [command] [options]'
+    - nested commands
+      - [x] show previous commands and either [command] or [options] depending on struct/union
+        - ie 'Usage: exe command [options]'
+      - [x] show command desc
+- [w] make README significantly shorter
+- [x] put all options in one place - clarp_options
+- [x] should always be max 2 options, a long and optional short. 
+  - [x] derived shorts use FieldOption.short if exists
+  - [x] account for FieldOption.short while deriving shorts
+- [x] support parsing types which users don't have control over
+  - [x] add parseWithOptions(T, ClarpOptions)
+- [x] rename fields - FieldOption.long
+- [x] clean up repetitive 'orelse std.io.getStdErr().writer().any()'
+  - [x] make err_writer default to io.null_writer instead of being optional
+- [ ] parsePayload() has too many args. make Ctx type.
