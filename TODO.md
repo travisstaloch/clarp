@@ -10,8 +10,12 @@
   - [x] add user_ctx to options, default null
   - [x] pass errwriter: io.AnyWriter to parse, default stderr
 - [x] option to use kebab case
-- [ ] overrides
-  - [ ] allow to mutate `seen_fields` by passing to `UserParseFn`
+- [x] overrides
+  - [x] allow to mutate `seen_fields` by passing to `UserParseFn`
+  - [x] pass payload pointer, eliminate user_ctx
+  - [x] pass Ctx inplace of args
+  - [x] add tests for union override
+  - [x] make overrides fallible
 - [x] unify error writing. currently using log.err, stderr, err_writer. these should be one.
   - [x] use ParseOptions.err_writer
 - [x] allow collapsing several shorts into one i.e. '-ab' instead of '-a -b'

@@ -57,7 +57,6 @@ pub fn Options(comptime T: type) type {
 
 /// parse() specific options. runtime.
 pub const ParseOptions = struct {
-    user_ctx: ?*anyopaque = null,
     err_writer: std.io.AnyWriter = std.io.null_writer.any(),
     allocator: ?mem.Allocator = null,
 };
@@ -79,9 +78,9 @@ pub fn defaultPrintUsage(
     rest_args: []const []const u8,
 ) anyerror!void {
     try writer.print("Usage: {s} ", .{std.fs.path.basename(init_args[0])});
-    const x = init_args[1..];
-    debug("x {}/{} {s}/{s}", .{ x.len, rest_args.len, x, rest_args });
-    for (x[0 .. x.len - rest_args.len]) |arg| {
+    const args = init_args[1..];
+    debug("args {}/{} {s}/{s}", .{ args.len, rest_args.len, args, rest_args });
+    for (args[0 .. args.len - rest_args.len]) |arg| {
         try writer.writeAll(arg);
         try writer.writeByte(' ');
     }
@@ -94,7 +93,13 @@ pub fn defaultPrintUsage(
 }
 const PrintUsageFn = @TypeOf(defaultPrintUsage);
 
-pub const UserParseFn = fn (args: *[]const []const u8, ctx: ?*anyopaque) void;
+pub fn Override(comptime T: type) type {
+    return *const fn (
+        ctx: Ctx,
+        payload: *T,
+        fields_seen: ?*std.StaticBitSet(std.meta.fields(T).len),
+    ) anyerror!void;
+}
 
 pub fn caseSame(_: []u8, name: []const u8) []const u8 {
     return name;
@@ -148,6 +153,7 @@ pub fn Parser(comptime T: type, comptime options: ParserOptions) type {
                 try printError(parse_options.err_writer, args, rest);
                 return e;
             };
+            errdefer deinitPayload(Root, root, parse_options.allocator);
             return if (rest.len != 0)
                 err(T, ctx, error.ExtraArgs)
             else
@@ -364,7 +370,7 @@ pub fn Parser(comptime T: type, comptime options: ParserOptions) type {
             const args = ctx.args;
             const FieldEnum = std.meta.FieldEnum(V);
             const kvs = comptime GenKvs(V, ShortNames(fields, V), FieldEnum, info, clarp_options, field_name);
-            const map = std.ComptimeStringMap(NamedOption(FieldEnum), kvs);
+            const map = std.ComptimeStringMap(NamedOption(V, FieldEnum), kvs);
 
             if (map.get(ctx.args.*[0])) |named_option| {
                 // debug("named_option {s}", .{@tagName(named_option)});
@@ -376,7 +382,9 @@ pub fn Parser(comptime T: type, comptime options: ParserOptions) type {
                     .override => |override| {
                         debug("found override", .{});
                         args.* = args.*[1..];
-                        override(args, parse_options.user_ctx);
+                        var payload: V = undefined;
+                        try override(ctx, &payload, null);
+                        return payload;
                     },
                     .end_mark => return err(V, ctx, error.UnionEndMark),
                     .short, .long => |fe| if (@typeInfo(FieldEnum).Enum.fields.len > 0) {
@@ -399,7 +407,6 @@ pub fn Parser(comptime T: type, comptime options: ParserOptions) type {
                                 ));
                             },
                         }
-                        unreachable;
                     },
                 }
             }
@@ -423,7 +430,7 @@ pub fn Parser(comptime T: type, comptime options: ParserOptions) type {
             const Short = ShortNames(fields, V);
             const FieldEnum = std.meta.FieldEnum(V);
             const kvs = comptime GenKvs(V, Short, FieldEnum, info, clarp_options, field_name);
-            const map = std.ComptimeStringMap(NamedOption(FieldEnum), kvs);
+            const map = std.ComptimeStringMap(NamedOption(V, FieldEnum), kvs);
 
             var payload: V = initEmpty(V) catch undefined;
             errdefer deinitPayload(V, payload, parse_options.allocator);
@@ -458,7 +465,7 @@ pub fn Parser(comptime T: type, comptime options: ParserOptions) type {
                         .override => |override| {
                             debug("found override", .{});
                             args.* = args.*[1..];
-                            override(args, parse_options.user_ctx);
+                            try override(ctx, &payload, &fields_seen);
                             continue :args;
                         },
                         .short, .long => |fe| if (@typeInfo(FieldEnum).Enum.fields.len > 0) {
@@ -601,7 +608,7 @@ pub fn Parser(comptime T: type, comptime options: ParserOptions) type {
             comptime info: std.builtin.Type,
             comptime clarp_options: Options(V),
             comptime field_name: ?[]const u8,
-        ) []const Kv(FieldEnum) {
+        ) []const Kv(V, FieldEnum) {
             comptime {
                 // calculate the buffer size needed
                 const end_mark_len: usize = @intFromBool(field_name != null or
@@ -626,15 +633,30 @@ pub fn Parser(comptime T: type, comptime options: ParserOptions) type {
                 }
                 const helps_len = @typeInfo(options.help_flags).Enum.fields.len;
 
-                const kv_len: usize = end_mark_len + overrides_len +
-                    dshorts_len + shorts_len + helps_len + switch (info) {
-                    .Struct => info.Struct.fields.len,
-                    .Union => info.Union.fields.len,
+                var longs_len: usize = 0;
+                const fields = switch (info) {
+                    .Struct => info.Struct.fields,
+                    .Union => info.Union.fields,
                     else => unreachable,
                 };
+                const short_prefix: []const u8 = if (info == .Struct) "-" else "";
+                const long_prefix: []const u8 = if (info == .Struct) "--" else "";
+                fields: for (fields) |f| {
+                    // skip long if there is an override with same name
+                    if (clarp_options.overrides != null) {
+                        for (std.meta.declarations(clarp_options.overrides.?)) |decl| {
+                            if (mem.eql(u8, long_prefix ++ f.name, decl.name))
+                                continue :fields;
+                        }
+                    }
+                    longs_len += 1;
+                }
+
+                const kv_len: usize = end_mark_len + overrides_len +
+                    dshorts_len + shorts_len + helps_len + longs_len;
 
                 // assign kvs
-                var kvs: [kv_len]Kv(FieldEnum) = undefined;
+                var kvs: [kv_len]Kv(V, FieldEnum) = undefined;
                 var kvidx: usize = 0;
                 if (clarp_options.end_mark != null) {
                     kvs[kvidx] = .{ clarp_options.end_mark.?, .end_mark };
@@ -653,9 +675,6 @@ pub fn Parser(comptime T: type, comptime options: ParserOptions) type {
                     }
                 }
 
-                const short_prefix: []const u8 = if (info == .Struct) "-" else "";
-                const long_prefix: []const u8 = if (info == .Struct) "--" else "";
-
                 if (clarp_options.derive_short_names) {
                     for (std.meta.tags(Short), 0..) |tag, j| {
                         const fe = std.meta.tags(FieldEnum)[j];
@@ -673,15 +692,24 @@ pub fn Parser(comptime T: type, comptime options: ParserOptions) type {
 
                 for (std.meta.tags(FieldEnum)) |tag| {
                     // add long
+                    // don't add long if there is an override with same name
                     const tagname = @tagName(tag);
-                    kvs[kvidx] = if (@field(clarp_options.fields, @tagName(tag)).long) |long|
-                        .{ long_prefix ++ long, .{ .long = tag } }
-                    else blk: {
-                        var buf: [tagname.len]u8 = undefined;
-                        const fname = options.caseFn(&buf, tagname);
-                        break :blk .{ long_prefix ++ fname, .{ .long = tag } };
-                    };
-                    kvidx += 1;
+                    var buf: [tagname.len]u8 = undefined;
+                    const fname = options.caseFn(&buf, tagname);
+                    const found_override = if (clarp_options.overrides != null)
+                        for (std.meta.declarations(clarp_options.overrides.?)) |decl| {
+                            if (mem.eql(u8, long_prefix ++ fname, decl.name)) break true;
+                        } else false
+                    else
+                        false;
+
+                    if (!found_override) {
+                        kvs[kvidx] = if (@field(clarp_options.fields, @tagName(tag)).long) |long|
+                            .{ long_prefix ++ long, .{ .long = tag } }
+                        else
+                            .{ long_prefix ++ fname, .{ .long = tag } };
+                        kvidx += 1;
+                    }
 
                     // add optional short
                     if (@field(clarp_options.fields, @tagName(tag)).short != null) {
@@ -693,6 +721,7 @@ pub fn Parser(comptime T: type, comptime options: ParserOptions) type {
                     }
                 }
                 std.debug.assert(kv_len == kvidx);
+                // for (kvs) |kv| @compileLog(kv[0], @tagName(kv[1]));
                 for (kvs) |kv| {
                     var count: u8 = 0;
                     for (kvs) |kv2| {
@@ -733,11 +762,9 @@ pub fn Parser(comptime T: type, comptime options: ParserOptions) type {
             return payload;
         }
 
-        const Override = *const fn (*[]const []const u8, ?*anyopaque) void;
-
-        fn NamedOption(comptime FieldEnum: type) type {
+        fn NamedOption(comptime V: type, comptime FieldEnum: type) type {
             return union(enum) {
-                override: Override,
+                override: Override(V),
                 end_mark,
                 short: FieldEnum,
                 long: FieldEnum,
@@ -745,8 +772,8 @@ pub fn Parser(comptime T: type, comptime options: ParserOptions) type {
             };
         }
 
-        fn Kv(comptime FieldEnum: type) type {
-            comptime return struct { []const u8, NamedOption(FieldEnum) };
+        fn Kv(comptime V: type, comptime FieldEnum: type) type {
+            comptime return struct { []const u8, NamedOption(V, FieldEnum) };
         }
 
         // TODO - colored errors somehow
@@ -1069,7 +1096,7 @@ pub fn Parser(comptime T: type, comptime options: ParserOptions) type {
     };
 }
 
-const Ctx = struct {
+pub const Ctx = struct {
     init_args: []const []const u8,
     args: *[]const []const u8,
     parse_options: ParseOptions,
