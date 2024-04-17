@@ -34,10 +34,9 @@ pub fn Options(comptime T: type) type {
         fields: Fields = if (is_container) .{} else {},
         /// help text override for the entrire struct
         help: ?[]const u8 = null,
-        /// when found, denotes end of input for this struct.  any further
-        /// input may apply to other fields.  default '--end-foo' for a field
-        /// named 'foo' .
-        end_mark: ?[]const u8 = null,
+        /// when found, denotes end of input for a field.  any further
+        /// input may apply to other fields.  default '--end'.
+        end_mark: []const u8 = "--end",
         /// when true, short names will be derived for each field in the parent
         /// struct. i.e. struct{foo: u8, bar: u8} results in '-f' and '-b'
         /// derived short names.  fields may override their short name by
@@ -294,6 +293,11 @@ pub fn Parser(comptime T: type, comptime options: ParserOptions) type {
                                 ct_ctx.outer_desc,
                             )));
                         }
+                        if (args.len > 0 and
+                            std.mem.eql(u8, args.*[0], ct_ctx.clarp_options.end_mark))
+                        {
+                            args.* = args.*[1..];
+                        }
                         return l.toOwnedSlice();
                     },
                     else => @compileError("TODO Pointer support " ++ @tagName(x.size)),
@@ -364,12 +368,11 @@ pub fn Parser(comptime T: type, comptime options: ParserOptions) type {
         ) !V {
             const info = @typeInfo(V);
             const clarp_options = ct_ctx.clarp_options;
-            const field_name = ct_ctx.field_name;
             const fields = info.Union.fields;
             const parse_options = ctx.parse_options;
             const args = ctx.args;
             const FieldEnum = std.meta.FieldEnum(V);
-            const kvs = comptime GenKvs(V, ShortNames(fields, V), FieldEnum, info, clarp_options, field_name);
+            const kvs = comptime GenKvs(V, ShortNames(fields, V), FieldEnum, info, clarp_options);
             const map = std.ComptimeStringMap(NamedOption(V, FieldEnum), kvs);
 
             if (map.get(ctx.args.*[0])) |named_option| {
@@ -422,14 +425,13 @@ pub fn Parser(comptime T: type, comptime options: ParserOptions) type {
         ) !V {
             const info = @typeInfo(V);
             const clarp_options = ct_ctx.clarp_options;
-            const field_name = ct_ctx.field_name;
             const parse_options = ctx.parse_options;
             const args = ctx.args;
             const init_args = ctx.init_args;
             const fields = info.Struct.fields;
             const Short = ShortNames(fields, V);
             const FieldEnum = std.meta.FieldEnum(V);
-            const kvs = comptime GenKvs(V, Short, FieldEnum, info, clarp_options, field_name);
+            const kvs = comptime GenKvs(V, Short, FieldEnum, info, clarp_options);
             const map = std.ComptimeStringMap(NamedOption(V, FieldEnum), kvs);
 
             var payload: V = initEmpty(V) catch undefined;
@@ -599,20 +601,19 @@ pub fn Parser(comptime T: type, comptime options: ParserOptions) type {
             return payload;
         }
 
-        /// returns kv pair for each end_mark, override, derived short/short, long name.
-        /// each pair has type struct{[]const u8, NamedOption(FieldEnum)}
+        /// returns kv pair for each override, derived short/short, long and one end_mark
+        /// each pair has type struct{[]const u8, NamedOption(V, FieldEnum)}
         fn GenKvs(
             comptime V: type,
             comptime Short: type,
             comptime FieldEnum: type,
             comptime info: std.builtin.Type,
             comptime clarp_options: Options(V),
-            comptime field_name: ?[]const u8,
         ) []const Kv(V, FieldEnum) {
             comptime {
+                // TODO don't precalculate buffer size. or figure a way to DRY
                 // calculate the buffer size needed
-                const end_mark_len: usize = @intFromBool(field_name != null or
-                    clarp_options.end_mark != null);
+                const end_mark_len = 1;
                 const overrides_len = if (clarp_options.overrides != null)
                     std.meta.declarations(clarp_options.overrides.?).len
                 else
@@ -658,13 +659,9 @@ pub fn Parser(comptime T: type, comptime options: ParserOptions) type {
                 // assign kvs
                 var kvs: [kv_len]Kv(V, FieldEnum) = undefined;
                 var kvidx: usize = 0;
-                if (clarp_options.end_mark != null) {
-                    kvs[kvidx] = .{ clarp_options.end_mark.?, .end_mark };
-                    kvidx += 1;
-                } else if (field_name != null) {
-                    kvs[kvidx] = .{ "--end-".* ++ field_name.?, .end_mark };
-                    kvidx += 1;
-                }
+
+                kvs[kvidx] = .{ clarp_options.end_mark, .end_mark };
+                kvidx += 1;
 
                 if (clarp_options.overrides) |overrides| {
                     for (std.meta.declarations(overrides)) |decl| {
@@ -691,8 +688,7 @@ pub fn Parser(comptime T: type, comptime options: ParserOptions) type {
                 }
 
                 for (std.meta.tags(FieldEnum)) |tag| {
-                    // add long
-                    // don't add long if there is an override with same name
+                    // add long unless there is an override with same name
                     const tagname = @tagName(tag);
                     var buf: [tagname.len]u8 = undefined;
                     const fname = options.caseFn(&buf, tagname);

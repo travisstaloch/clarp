@@ -29,7 +29,7 @@ Tuple types create unnamed sequences and are parsed strictly by position.
 
 Bool fields create 'flags' and may be specified as `--flag` or `true`/`false` when unnamed.  They are always optional and default to false.
 
-Slice fields require an allocator and consume input until an argument is found which starts with '-' or end of arguments.  Allocator may be provided via `ParseOptions.allocator`.
+Slice fields require an allocator and consume input until an argument is found which starts with '-' or end of arguments. `clarp_options.end_marker` may also be used to mark the end of field's arguments.  This may be necessary with unnamed, positional fields.  An Allocator can be passed as `ParseOptions.allocator`.
 
 ## Zig version
 This package was developed against zig version 0.12.0-dev.3594+355cceebc

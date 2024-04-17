@@ -4,8 +4,9 @@
   - [x] use comptime string map of all possible options and compile error if duplicate keys are found.
   - [x] do same for unions/commands
 - [x] add Option to derive shorts
-- [x] support 'end of sequence' marker. default '--end-field_name'
+- [x] support 'end of sequence' marker. default '--end'
   - [x] allow user to override via struct `pub const end_mark = "--foo"`
+  - [x] make end marker work with slice fields
 - [x] parse options
   - [x] add user_ctx to options, default null
   - [x] pass errwriter: io.AnyWriter to parse, default stderr
@@ -42,3 +43,4 @@
 - [x] parsePayload() has too many args. make Ctx type.
 - [x] support slice types which need to allocate
 - [x] support positional parsing in struct fields via FieldOption.positional
+- [ ] support args --foo=1 --foo1 -f=1 -f1

@@ -318,21 +318,21 @@ test "struct end mark" {
             argv("--a --b 20 --b 30"),
             .{ .a = .{ .b = 20 }, .b = 30 },
         );
-        try expect(argv("--a --end-a --b 20"), .{ .b = 20 });
+        try expect(argv("--a --end --b 20"), .{ .b = 20 });
     }
     { // custom end mark
         const P = clarp.Parser(struct {
             a: struct {
                 b: u8 = 1,
                 pub const clarp_options = Options(@This()){
-                    .end_mark = "--my-end-a-mark",
+                    .end_mark = "--my-end-mark",
                 };
             } = .{},
             b: u8 = 2,
         }, .{});
         const expect = expectFn(P);
         try expect(argv("--a --b 20 --b 30"), .{ .a = .{ .b = 20 }, .b = 30 });
-        try expect(argv("--a --my-end-a-mark --b 20"), .{ .b = 20 });
+        try expect(argv("--a --my-end-mark --b 20"), .{ .b = 20 });
     }
 }
 
@@ -670,14 +670,8 @@ test "positional field" {
         P.parse(argv("a"), .{ .allocator = talloc }),
     );
     const expect = expectFn(P);
-    try expect(
-        argv("a b c --b 1"),
-        .{ .files = &.{ "a", "b", "c" }, .b = 1 },
-    );
-    try expect(
-        argv("--b 1 a b c"),
-        .{ .files = &.{ "a", "b", "c" }, .b = 1 },
-    );
+    try expect(argv("a b c --b 1"), .{ .files = &.{ "a", "b", "c" }, .b = 1 });
+    try expect(argv("--b 1 a b c"), .{ .files = &.{ "a", "b", "c" }, .b = 1 });
 
     const P2 = clarp.Parser(struct {
         afiles: []const []const u8,
@@ -695,6 +689,11 @@ test "positional field" {
     );
     try expectFn(P2)(
         argv("a b c --bfiles 1 2 3"),
+        .{ .afiles = &.{ "a", "b", "c" }, .bfiles = &.{ "1", "2", "3" } },
+    );
+    // --end mark for slice field
+    try expectFn(P2)(
+        argv("--bfiles 1 2 3 --end a b c"),
         .{ .afiles = &.{ "a", "b", "c" }, .bfiles = &.{ "1", "2", "3" } },
     );
 }
