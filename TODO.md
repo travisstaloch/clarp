@@ -44,5 +44,6 @@
 - [x] support slice types which need to allocate
 - [x] support positional parsing in struct fields via FieldOption.positional
 - [x] support args --foo=1 --foo1 -f=1 -f1
-- [ ] parseUnion() should search map for matching key similar to parseStruct()
-  - [ ] try to create test showing how this is broken
+- [x] parseUnion() should search map for matching key similar to parseStruct()
+  - [x] create test showing how this is broken
+    - [x] added test "union field name overrides" - works fine

@@ -1,13 +1,26 @@
 const std = @import("std");
 
 pub fn build(b: *std.Build) void {
+    const build_options = b.addOptions();
+    build_options.addOption(
+        bool,
+        "show_debug",
+        b.option(bool, "show-debug", "show debug output") orelse false,
+    );
+
     const mod = b.addModule("clarp", .{
         .root_source_file = .{ .path = "src/clarp.zig" },
-        .imports = &.{.{
-            .name = "comptime-string-map",
-            .module = b.dependency("comptime-string-map", .{})
-                .module("comptime-string-map-revised"),
-        }},
+        .imports = &.{
+            .{
+                .name = "comptime-string-map",
+                .module = b.dependency("comptime-string-map", .{})
+                    .module("comptime-string-map-revised"),
+            },
+            .{
+                .name = "build-options",
+                .module = build_options.createModule(),
+            },
+        },
     });
 
     const target = b.standardTargetOptions(.{});

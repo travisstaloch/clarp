@@ -796,3 +796,16 @@ test "partial match" {
     try expect(argv("-batrue"), .{ .baz = true });
     try expect(argv("-ba"), .{ .baz = true });
 }
+
+test "union field name overrides" {
+    const P = clarp.Parser(union(enum) {
+        foo: bool,
+        pub const clarp_options = Options(@This()){
+            .fields = .{ .foo = .{ .long = "foo-long", .short = "fo" } },
+        };
+    }, .{});
+
+    const expect = expectFn(P);
+    try expect(argv("foo-long"), .{ .foo = true });
+    try expect(argv("fo"), .{ .foo = true });
+}

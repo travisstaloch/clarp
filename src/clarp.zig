@@ -198,9 +198,10 @@ pub fn Parser(comptime T: type, comptime options: ParserOptions) type {
             if (args.len == 0) {
                 return if (mustConsume(V))
                     err(V, ctx, error.NotEnoughArgs)
+                else if (info == .Bool and field_name != null)
+                    true
                 else
-                    initEmpty(V) catch
-                        err(V, ctx, error.NotEnoughArgs);
+                    initEmpty(V) catch err(V, ctx, error.NotEnoughArgs);
             }
 
             switch (info) {
@@ -761,12 +762,16 @@ pub fn Parser(comptime T: type, comptime options: ParserOptions) type {
                     }
                 }
                 std.debug.assert(kv_len == kvidx);
-                // for (kvs) |kv| @compileLog(kv[0], @tagName(kv[1]));
+                // check for duplicate keys
                 for (kvs) |kv| {
                     var count: u8 = 0;
                     for (kvs) |kv2| {
                         count += @intFromBool(mem.eql(u8, kv[0], kv2[0]));
-                        if (count > 1) @compileError("duplicate key '" ++ kv[0] ++ "'");
+                        if (count > 1)
+                            @compileError(std.fmt.comptimePrint(
+                                "duplicate kv {s}: {s}, kv2 {s}: {s}",
+                                .{ kv[0], @tagName(kv[1]), kv2[0], @tagName(kv2[1]) },
+                            ));
                     }
                 }
                 const ret = &kvs;
@@ -1209,9 +1214,8 @@ fn CtCtx(comptime V: type) type {
     };
 }
 
-// const show_debug = {};
 fn debug(comptime fmt: []const u8, args: anytype) void {
-    if (@hasDecl(@This(), "show_debug"))
+    if (@import("build-options").show_debug)
         log.debug(fmt, args);
 }
 
