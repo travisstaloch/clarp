@@ -43,4 +43,6 @@
 - [x] parsePayload() has too many args. make Ctx type.
 - [x] support slice types which need to allocate
 - [x] support positional parsing in struct fields via FieldOption.positional
-- [ ] support args --foo=1 --foo1 -f=1 -f1
+- [x] support args --foo=1 --foo1 -f=1 -f1
+- [ ] parseUnion() should search map for matching key similar to parseStruct()
+  - [ ] try to create test showing how this is broken

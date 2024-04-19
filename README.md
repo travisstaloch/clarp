@@ -1,6 +1,6 @@
 # About
 
-Derive customizable command line parsers from union and struct types.  Provides nested, context aware usage text similar to the zig compiler.  Works with existing data structures you may not control.
+Derive command line parsers from union and struct types.  Provides nested, context aware usage text similar to the zig compiler.  Works with existing data structures you may not control.
 
 # Features
 

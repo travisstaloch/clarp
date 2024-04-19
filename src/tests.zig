@@ -190,10 +190,15 @@ test "flags" {
     const P = clarp.Parser(struct {
         a: bool,
         b: u8,
+        pub const clarp_options = Options(@This()){
+            .derive_short_names = true,
+        };
     }, .{});
     const expect = expectFn(P);
     try expect(argv("--a --b 1"), .{ .a = true, .b = 1 });
     try expect(argv("--b 1"), .{ .a = false, .b = 1 });
+    try expect(argv("--b 1 -a"), .{ .b = 1, .a = true });
+    try expect(argv("-a --b 1"), .{ .b = 1, .a = true });
 }
 
 test "overrides" {
@@ -769,7 +774,9 @@ test "command with positional - different field order" {
 
 test "partial match" {
     const P = clarp.Parser(struct {
-        foo: u8,
+        foo: u8 = 0,
+        bar: []const u8 = "",
+        baz: bool = false,
         pub const clarp_options = Options(@This()){
             .derive_short_names = true,
         };
@@ -779,4 +786,13 @@ test "partial match" {
     try expect(argv("--foo1"), .{ .foo = 1 });
     try expect(argv("-f=1"), .{ .foo = 1 });
     try expect(argv("-f1"), .{ .foo = 1 });
+    try expect(argv("--bar=str"), .{ .bar = "str" });
+    try expect(argv("--barstr"), .{ .bar = "str" });
+    try expect(argv("-b=str"), .{ .bar = "str" });
+    try expect(argv("-bstr"), .{ .bar = "str" });
+    try expect(argv("--baz=true"), .{ .baz = true });
+    try expect(argv("--baztrue"), .{ .baz = true });
+    try expect(argv("-ba=true"), .{ .baz = true });
+    try expect(argv("-batrue"), .{ .baz = true });
+    try expect(argv("-ba"), .{ .baz = true });
 }

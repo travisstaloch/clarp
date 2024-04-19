@@ -215,11 +215,9 @@ pub fn Parser(comptime T: type, comptime options: ParserOptions) type {
                     return std.fmt.parseFloat(V, args.*[0]);
                 },
                 .Bool => {
-                    debug("bool {s}", .{args.*[0]});
+                    debug("bool {s} field_name {?s}", .{ args.*[0], field_name });
                     if (field_name) |n| {
-                        if (mem.startsWith(u8, args.*[0], "--") and
-                            mem.eql(u8, args.*[0][2..], n))
-                        {
+                        if (mem.eql(u8, args.*[0], n)) {
                             args.* = args.*[1..];
                             return true;
                         }
@@ -324,41 +322,6 @@ pub fn Parser(comptime T: type, comptime options: ParserOptions) type {
                             ct_ctx.outer_desc,
                         ),
                     ),
-            }
-        }
-
-        fn printHelp0(
-            comptime V: type,
-            ctx: Ctx,
-            comptime outer_desc: ?[]const u8,
-        ) !void {
-            const parse_options = ctx.parse_options;
-            const args = ctx.args;
-            const init_args = ctx.init_args;
-            const writer = parse_options.err_writer;
-            const has_options = @hasDecl(V, "clarp_options");
-            const has_help = has_options and V.clarp_options.help != null;
-            if (!has_help) {
-                try options.printUsage(V, writer, init_args, args.*);
-            }
-            if (outer_desc != null) {
-                try writer.print("  {s}\n\n", .{outer_desc.?});
-            }
-
-            try printHelp(V, writer, 1, longestFieldLen(V));
-
-            if (!has_help) {
-                try writer.writeAll("\n\nGeneral Options:\n\n");
-                var cwriter = std.io.countingWriter(writer);
-                const w = cwriter.writer();
-                try w.writeAll("  ");
-                inline for (@typeInfo(options.help_flags).Enum.fields, 0..) |f, i| {
-                    if (i != 0) try w.writeAll(", ");
-                    try w.writeAll(f.name);
-                }
-                try writer.writeByteNTimes(' ', options.help_description_start_column - cwriter.bytes_written);
-                try writer.writeAll("Print command specific usage.");
-                try writer.writeAll("\n\n");
             }
         }
 
@@ -471,10 +434,48 @@ pub fn Parser(comptime T: type, comptime options: ParserOptions) type {
                             try override(ctx, &payload, &fields_seen);
                             continue :args;
                         },
-                        .short, .long => |fe| if (@typeInfo(FieldEnum).Enum.fields.len > 0) {
+                        .short => |fe| if (@typeInfo(FieldEnum).Enum.fields.len > 0) {
                             switch (fe) {
                                 inline else => |tag| {
-                                    debug("found {s} {s} {s}", .{ @tagName(named_option), args.*[0], @tagName(tag) });
+                                    const key: ?[]const u8 = comptime for (map.sorted_kvs) |kv| {
+                                        switch (kv.value) {
+                                            .short => |sfe| if (sfe == tag)
+                                                break kv.key,
+                                            else => {},
+                                        }
+                                    } else null;
+                                    debug("found {s} {s} {s} key {?s}", .{ @tagName(named_option), args.*[0], @tagName(tag), key });
+                                    const fi = @intFromEnum(tag);
+                                    const Ft = @TypeOf(@field(payload, fields[fi].name));
+                                    args.* = args.*[@intFromBool(!isFlagType(Ft))..];
+                                    @field(payload, @tagName(tag)) = try parsePayload(
+                                        Ft,
+                                        ctx,
+                                        comptime CtCtx(Ft).init(
+                                            key,
+                                            clarpOptions(Ft),
+                                            if (@hasDecl(V, "clarp_options"))
+                                                @field(V.clarp_options.fields, @tagName(tag)).desc
+                                            else
+                                                null,
+                                        ),
+                                    );
+                                    fields_seen.set(fi);
+                                    continue :args;
+                                },
+                            }
+                        },
+                        .long => |fe| if (@typeInfo(FieldEnum).Enum.fields.len > 0) {
+                            switch (fe) {
+                                inline else => |tag| {
+                                    const key: ?[]const u8 = comptime for (map.sorted_kvs) |kv| {
+                                        switch (kv.value) {
+                                            .long => |sfe| if (sfe == tag)
+                                                break kv.key,
+                                            else => {},
+                                        }
+                                    } else null;
+                                    debug("found {s} {s} {s} key {?s}", .{ @tagName(named_option), args.*[0], @tagName(tag), key });
                                     const fi = @intFromEnum(tag);
                                     const Ft = @TypeOf(@field(payload, fields[fi].name));
                                     args.* = args.*[@intFromBool(!isFlagType(Ft))..];
@@ -482,7 +483,7 @@ pub fn Parser(comptime T: type, comptime options: ParserOptions) type {
                                         Ft,
                                         ctx,
                                         CtCtx(Ft).init(
-                                            fields[fi].name,
+                                            key,
                                             clarpOptions(Ft),
                                             if (@hasDecl(V, "clarp_options"))
                                                 @field(V.clarp_options.fields, @tagName(tag)).desc
@@ -560,7 +561,7 @@ pub fn Parser(comptime T: type, comptime options: ParserOptions) type {
                                         parse_options,
                                     ),
                                     CtCtx(Ft).init(
-                                        fields[fi].name,
+                                        "--" ++ fields[fi].name,
                                         clarpOptions(fields[fi].type),
                                         if (@hasDecl(V, "clarp_options"))
                                             @field(V.clarp_options.fields, fields[fi].name).desc
@@ -848,6 +849,41 @@ pub fn Parser(comptime T: type, comptime options: ParserOptions) type {
         //     try std.io.tty.detectConfig(f).setColor(f, .reset);
         //     try writer.writeAll("\n");
         // }
+
+        fn printHelp0(
+            comptime V: type,
+            ctx: Ctx,
+            comptime outer_desc: ?[]const u8,
+        ) !void {
+            const parse_options = ctx.parse_options;
+            const args = ctx.args;
+            const init_args = ctx.init_args;
+            const writer = parse_options.err_writer;
+            const has_options = @hasDecl(V, "clarp_options");
+            const has_help = has_options and V.clarp_options.help != null;
+            if (!has_help) {
+                try options.printUsage(V, writer, init_args, args.*);
+            }
+            if (outer_desc != null) {
+                try writer.print("  {s}\n\n", .{outer_desc.?});
+            }
+
+            try printHelp(V, writer, 1, longestFieldLen(V));
+
+            if (!has_help) {
+                try writer.writeAll("\n\nGeneral Options:\n\n");
+                var cwriter = std.io.countingWriter(writer);
+                const w = cwriter.writer();
+                try w.writeAll("  ");
+                inline for (@typeInfo(options.help_flags).Enum.fields, 0..) |f, i| {
+                    if (i != 0) try w.writeAll(", ");
+                    try w.writeAll(f.name);
+                }
+                try writer.writeByteNTimes(' ', options.help_description_start_column - cwriter.bytes_written);
+                try writer.writeAll("Print command specific usage.");
+                try writer.writeAll("\n\n");
+            }
+        }
 
         fn printError(writer: std.io.AnyWriter, args: []const []const u8, rest: []const []const u8) !void {
             if (@import("builtin").is_test) return;
@@ -1155,7 +1191,7 @@ pub const Ctx = struct {
 
 fn CtCtx(comptime V: type) type {
     return struct {
-        field_name: ?[]const u8,
+        field_name: ?[]const u8, // TODO rename to something like field_key since its meaning has changed.
         clarp_options: Options(V),
         outer_desc: ?[]const u8,
 
