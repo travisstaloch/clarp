@@ -766,3 +766,17 @@ test "command with positional - different field order" {
         .{ .mycmd = .{ .files = &.{ "file.txt", "image.png" }, .foo = false, .bar = false } },
     );
 }
+
+test "partial match" {
+    const P = clarp.Parser(struct {
+        foo: u8,
+        pub const clarp_options = Options(@This()){
+            .derive_short_names = true,
+        };
+    }, .{});
+    const expect = expectFn(P);
+    try expect(argv("--foo=1"), .{ .foo = 1 });
+    try expect(argv("--foo1"), .{ .foo = 1 });
+    try expect(argv("-f=1"), .{ .foo = 1 });
+    try expect(argv("-f1"), .{ .foo = 1 });
+}

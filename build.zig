@@ -3,6 +3,11 @@ const std = @import("std");
 pub fn build(b: *std.Build) void {
     const mod = b.addModule("clarp", .{
         .root_source_file = .{ .path = "src/clarp.zig" },
+        .imports = &.{.{
+            .name = "comptime-string-map",
+            .module = b.dependency("comptime-string-map", .{})
+                .module("comptime-string-map-revised"),
+        }},
     });
 
     const target = b.standardTargetOptions(.{});
@@ -22,6 +27,7 @@ pub fn build(b: *std.Build) void {
     if (b.args) |args| test_cmd.addArgs(args);
     const run_step = b.step("test", "Run the tests");
     run_step.dependOn(&test_cmd.step);
+    b.installArtifact(tests);
 
     const testexe = b.addExecutable(.{
         .name = "testexe",

@@ -16,9 +16,16 @@ Derive customizable command line parsers from union and struct types.  Provides 
 * diagnostics which clearly point to parsing errors
 * easily dump parse results
   * from any print() method: `std.debug.print("{}", .{parse_result});`
-* derive short names and override with `FieldOption.short`
+* derive short names by setting `clarp_options.derive_short_names` and override them with `FieldOption.short`
 * apply `clarp_options` to types you don't control with `parseWithOptions()`
 * rename long names with `FieldOption.long`
+* long and short options can be parsed with any of these forms:
+ 
+   | Long          | Short      |
+   | ------------- | ---------- |
+   | `--foo value` | `-f value` |
+   | `--foo=value` | `-f=value` |
+   | `--foovalue`  | `-fvalue`  |
 
 # Overview
 Union types create alternative commands.  Commands match field names exactly.
