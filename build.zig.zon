@@ -2,15 +2,9 @@
     .name = "clarp",
     .version = "0.0.0",
 
-    .minimum_zig_version = "0.12.0-dev.3644+05d975576",
+    .minimum_zig_version = "0.13.0-dev.75+5c9eb4081",
 
-    .dependencies = .{
-        .@"comptime-string-map" = .{
-            .url = "https://github.com/travisstaloch/comptime-string-map-revised/archive/9bd608fdb134fcc9b4ef33d4ecf872a22d631970.tar.gz",
-            .hash = "1220a592ed9e8164ee7b6eccccf79878bd863b0a1075eda57838105f8358e1b3add7",
-            // .path = "../comptime-string-map-revised",
-        },
-    },
+    .dependencies = .{},
 
     .paths = .{
         "build.zig",

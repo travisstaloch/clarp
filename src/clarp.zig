@@ -5,7 +5,6 @@
 const std = @import("std");
 const mem = std.mem;
 const log = std.log.scoped(.@"cli-parsing"); // TODO remove
-const ctstrmap = @import("comptime-string-map");
 
 pub const FieldOption = struct {
     /// an alternate option or command name for this field.  for a field named
@@ -338,7 +337,7 @@ pub fn Parser(comptime T: type, comptime options: ParserOptions) type {
             const args = ctx.args;
             const FieldEnum = std.meta.FieldEnum(V);
             const kvs = comptime GenKvs(V, ShortNames(fields, V), FieldEnum, info, clarp_options);
-            const map = ctstrmap.ComptimeStringMap(NamedOption(V, FieldEnum)).init(kvs);
+            const map = std.StaticStringMap(NamedOption(V, FieldEnum)).initComptime(kvs);
 
             if (map.get(ctx.args.*[0])) |named_option| {
                 // debug("named_option {s}", .{@tagName(named_option)});
@@ -397,7 +396,7 @@ pub fn Parser(comptime T: type, comptime options: ParserOptions) type {
             const Short = ShortNames(fields, V);
             const FieldEnum = std.meta.FieldEnum(V);
             const kvs = comptime GenKvs(V, Short, FieldEnum, info, clarp_options);
-            const map = ctstrmap.ComptimeStringMap(NamedOption(V, FieldEnum)).init(kvs);
+            const map = std.StaticStringMap(NamedOption(V, FieldEnum)).initComptime(kvs);
 
             var payload: V = initEmpty(V) catch undefined;
             errdefer deinitPayload(V, payload, parse_options.allocator);
@@ -438,10 +437,10 @@ pub fn Parser(comptime T: type, comptime options: ParserOptions) type {
                         .short => |fe| if (@typeInfo(FieldEnum).Enum.fields.len > 0) {
                             switch (fe) {
                                 inline else => |tag| {
-                                    const key: ?[]const u8 = comptime for (map.sorted_kvs) |kv| {
-                                        switch (kv.value) {
+                                    const key: ?[]const u8 = comptime for (map.keys(), map.values()) |k, v| {
+                                        switch (v) {
                                             .short => |sfe| if (sfe == tag)
-                                                break kv.key,
+                                                break k,
                                             else => {},
                                         }
                                     } else null;
@@ -469,10 +468,10 @@ pub fn Parser(comptime T: type, comptime options: ParserOptions) type {
                         .long => |fe| if (@typeInfo(FieldEnum).Enum.fields.len > 0) {
                             switch (fe) {
                                 inline else => |tag| {
-                                    const key: ?[]const u8 = comptime for (map.sorted_kvs) |kv| {
-                                        switch (kv.value) {
+                                    const key: ?[]const u8 = comptime for (map.keys(), map.values()) |k, v| {
+                                        switch (v) {
                                             .long => |sfe| if (sfe == tag)
-                                                break kv.key,
+                                                break k,
                                             else => {},
                                         }
                                     } else null;
@@ -500,7 +499,7 @@ pub fn Parser(comptime T: type, comptime options: ParserOptions) type {
                     }
                 }
 
-                const partial_match = if (map.getPartial(ctx.args.*[0])) |kv| blk: {
+                const partial_match = if (map.getLongestPrefix(ctx.args.*[0])) |kv| blk: {
                     const named_option = kv.value;
 
                     switch (named_option) {

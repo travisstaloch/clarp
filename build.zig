@@ -10,17 +10,10 @@ pub fn build(b: *std.Build) void {
 
     const mod = b.addModule("clarp", .{
         .root_source_file = .{ .path = "src/clarp.zig" },
-        .imports = &.{
-            .{
-                .name = "comptime-string-map",
-                .module = b.dependency("comptime-string-map", .{})
-                    .module("comptime-string-map-revised"),
-            },
-            .{
-                .name = "build-options",
-                .module = build_options.createModule(),
-            },
-        },
+        .imports = &.{.{
+            .name = "build-options",
+            .module = build_options.createModule(),
+        }},
     });
 
     const target = b.standardTargetOptions(.{});
