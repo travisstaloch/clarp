@@ -39,7 +39,7 @@ Bool fields create 'flags' and may be specified as `--flag` or `true`/`false` wh
 Slice fields require an allocator and consume input until an argument is found which starts with '-' or end of arguments. `clarp_options.end_marker` may also be used to mark the end of field's arguments.  This may be necessary with unnamed, positional fields.  An Allocator can be passed as `ParseOptions.allocator`.
 
 ## Zig version
-This package was developed against zig version 0.12.0.  Nightly users should be able to use the [0.13-dev branch](https://github.com/travisstaloch/clarp/tree/0.13-dev).
+This package was developed against zig version 0.12.0.  Nightly users should be able to use the [main branch](https://github.com/travisstaloch/clarp/tree/main).
 
 # Usage
 You can find many examples in the [tests](src/tests.zig).

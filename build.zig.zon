@@ -2,7 +2,7 @@
     .name = "clarp",
     .version = "0.0.0",
 
-    .minimum_zig_version = "0.12.0-dev.3644+05d975576",
+    .minimum_zig_version = "0.12.0",
 
     .dependencies = .{
         .@"comptime-string-map" = .{
