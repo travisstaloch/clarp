@@ -9,7 +9,7 @@ pub fn build(b: *std.Build) void {
     );
 
     const mod = b.addModule("clarp", .{
-        .root_source_file = .{ .path = "src/clarp.zig" },
+        .root_source_file = b.path("src/clarp.zig"),
         .imports = &.{.{
             .name = "build-options",
             .module = build_options.createModule(),
@@ -21,7 +21,7 @@ pub fn build(b: *std.Build) void {
 
     const tests = b.addTest(.{
         .name = "tests",
-        .root_source_file = .{ .path = "src/tests.zig" },
+        .root_source_file = b.path("src/tests.zig"),
         .target = target,
         .optimize = optimize,
         .filter = b.option([]const u8, "test-filter", "test filter"),
@@ -37,7 +37,7 @@ pub fn build(b: *std.Build) void {
 
     const testexe = b.addExecutable(.{
         .name = "testexe",
-        .root_source_file = .{ .path = "src/test-demo.zig" },
+        .root_source_file = b.path("src/test-demo.zig"),
         .target = target,
         .optimize = optimize,
     });
