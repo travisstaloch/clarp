@@ -32,4 +32,10 @@ pub fn main() !void {
         else => return e,
     };
     std.debug.print("{}\n", .{parsed});
+
+    // access parse result
+    switch (parsed.result) {
+        .cmd1 => {},
+        .cmd2 => {},
+    }
 }

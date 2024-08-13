@@ -126,13 +126,13 @@ pub fn caseKebab(buf: []u8, name: []const u8) []const u8 {
 /// unnamed) and they implicitly default to false.
 pub fn Parser(comptime T: type, comptime options: ParserOptions) type {
     return struct {
-        root: Root,
+        result: Result,
         args: []const []const u8,
         rest: []const []const u8,
         user_context: ?*anyopaque = null,
 
         const Self = @This();
-        pub const Root = T;
+        pub const Result = T;
 
         /// parse command line args with `clarp_options`
         pub fn parseWithOptions(
@@ -143,7 +143,7 @@ pub fn Parser(comptime T: type, comptime options: ParserOptions) type {
             // debug("args[1] {s}", .{args[1]});
             var rest = args[1..];
             const ctx = Ctx.init(args, &rest, parse_options);
-            const root = parsePayload(
+            const result = parsePayload(
                 T,
                 ctx,
                 CtCtx(T).init(null, clarp_options, null),
@@ -152,11 +152,11 @@ pub fn Parser(comptime T: type, comptime options: ParserOptions) type {
                 try printError(parse_options.err_writer, args, rest);
                 return e;
             };
-            errdefer deinitPayload(Root, root, parse_options.allocator);
+            errdefer deinitPayload(Result, result, parse_options.allocator);
             return if (rest.len != 0)
                 err(T, ctx, error.ExtraArgs)
             else
-                .{ .root = root, .args = args, .rest = rest };
+                .{ .result = result, .args = args, .rest = rest };
         }
 
         /// parse command line args
@@ -924,9 +924,9 @@ pub fn Parser(comptime T: type, comptime options: ParserOptions) type {
             writer: anytype,
         ) !void {
             if (fmt.len == 0)
-                try dump(self.root, fmt, fmt_opts, writer, 0)
+                try dump(self.result, fmt, fmt_opts, writer, 0)
             else if (comptime mem.eql(u8, fmt, "help")) {
-                try help(Root, self.args, self.rest, writer);
+                try help(Result, self.args, self.rest, writer);
             } else @compileError("unknown fmt '" ++ fmt ++ "'");
         }
 
@@ -1148,7 +1148,7 @@ pub fn Parser(comptime T: type, comptime options: ParserOptions) type {
         }
 
         pub fn deinit(self: Self, allocator: ?mem.Allocator) void {
-            deinitPayload(Self.Root, self.root, allocator);
+            deinitPayload(Self.Result, self.result, allocator);
         }
 
         pub fn deinitPayload(comptime V: type, payload: V, allocator: ?mem.Allocator) void {

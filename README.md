@@ -92,19 +92,18 @@ pub fn main() !void {
             foo: []const u8,
             pub const clarp_options = clarp.Options(@This()){
                 .fields = .{
-                    .foo = .{ .desc = "Foo desc." },
+                    .foo = .{ .desc = "Foo description." },
                 },
             };
         },
         cmd2: struct { enum { a, b } = .a },
         pub const clarp_options = clarp.Options(@This()){
             .fields = .{
-                .cmd1 = .{ .desc = "Cmd1 desc.", .short = "c1" },
-                .cmd2 = .{ .desc = "Cmd2 desc.", .short = "c2" },
+                .cmd1 = .{ .desc = "Cmd1 description.", .short = "c1" },
+                .cmd2 = .{ .desc = "Cmd2 description.", .short = "c2" },
             },
         };
     }, .{});
-
 
     const args = try std.process.argsAlloc(allocator);
     const parsed = ArgParser.parse(args, .{
@@ -114,6 +113,12 @@ pub fn main() !void {
         else => return e,
     };
     std.debug.print("{}\n", .{parsed});
+
+    // access parse result
+    switch (parsed.result) {
+        .cmd1 => {},
+        .cmd2 => {},
+    }
 }
 ```
 

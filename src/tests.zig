@@ -48,12 +48,12 @@ const TestParser = clarp.Parser(union(enum) {
 }, .{});
 
 fn ExpectFn(comptime P: type) type {
-    return fn (args: []const []const u8, expected: P.Root) anyerror!void;
+    return fn (args: []const []const u8, expected: P.Result) anyerror!void;
 }
 
 fn expectFn(comptime P: type) ExpectFn(P) {
     return struct {
-        fn func(args: []const []const u8, expected: P.Root) anyerror!void {
+        fn func(args: []const []const u8, expected: P.Result) anyerror!void {
             const x = try P.parse(args, .{ .allocator = talloc });
             defer x.deinit(talloc);
             // exercise dump() and help() to catch compile errors
@@ -61,7 +61,7 @@ fn expectFn(comptime P: type) ExpectFn(P) {
             try x.dump("", .{}, std.io.null_writer, 0);
             try std.io.null_writer.print("{help}", .{x});
             try std.io.null_writer.print("{}", .{x});
-            return testing.expectEqualDeep(expected, x.root);
+            return testing.expectEqualDeep(expected, x.result);
         }
     }.func;
 }
@@ -179,7 +179,7 @@ test "Command" {
     try expect(argv("run f b"), .{ .run = .{ .f = .b } });
     {
         const x = try TestParser.parse(argv("run arr foo"), .{});
-        try testing.expectEqualStrings("foo", x.root.run.arr[0..3]);
+        try testing.expectEqualStrings("foo", x.result.run.arr[0..3]);
     }
     try expect(argv("opt null"), .{ .opt = null });
     try expect(argv("opt foo"), .{ .opt = "foo" });
@@ -432,7 +432,7 @@ test "help override all - struct" {
     var l = std.ArrayList(u8).init(talloc);
     defer l.deinit();
     _ = P.parse(&.{exe_path}, .{ .err_writer = l.writer().any() }) catch {};
-    try testing.expectEqualStrings(P.Root.clarp_options.help.?, l.items);
+    try testing.expectEqualStrings(P.Result.clarp_options.help.?, l.items);
 }
 
 test "help override all - union" {
@@ -453,7 +453,7 @@ test "help override all - union" {
     var l = std.ArrayList(u8).init(talloc);
     defer l.deinit();
     _ = P.parse(&.{exe_path}, .{ .err_writer = l.writer().any() }) catch {};
-    try testing.expectEqualStrings(P.Root.clarp_options.help.?, l.items);
+    try testing.expectEqualStrings(P.Result.clarp_options.help.?, l.items);
 }
 
 test "collapse derived short flags" {
@@ -507,7 +507,7 @@ test "parseWithOptions - struct" {
         .fields = .{ .aaa = .{ .short = "-aa" } },
         .derive_short_names = true,
     });
-    try testing.expectEqualDeep(S{ .aaa = 1 }, s.root);
+    try testing.expectEqualDeep(S{ .aaa = 1 }, s.result);
 }
 
 test "parseWithOptions - union" {
@@ -517,7 +517,7 @@ test "parseWithOptions - union" {
         .fields = .{ .aaa = .{ .short = "aa" } },
         .derive_short_names = true,
     });
-    try testing.expectEqualDeep(U{ .aaa = 1 }, s.root);
+    try testing.expectEqualDeep(U{ .aaa = 1 }, s.result);
 }
 
 test "rename long - struct" {
