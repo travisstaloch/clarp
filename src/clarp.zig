@@ -85,8 +85,8 @@ pub fn defaultPrintUsage(
     }
     const info = @typeInfo(T);
     switch (info) {
-        .Union => try writer.writeAll("[command]\n\n"),
-        .Struct => try writer.writeAll("[options]\n\n"),
+        .@"union" => try writer.writeAll("[command]\n\n"),
+        .@"struct" => try writer.writeAll("[options]\n\n"),
         else => @compileError("unexpected type '" ++ @typeName(T) ++ "'"),
     }
 }
@@ -197,7 +197,7 @@ pub fn Parser(comptime T: type, comptime options: ParserOptions) type {
             if (args.len == 0) {
                 return if (mustConsume(V))
                     err(V, ctx, error.NotEnoughArgs)
-                else if (info == .Bool and field_name != null)
+                else if (info == .bool and field_name != null)
                     true
                 else
                     initEmpty(V) catch err(V, ctx, error.NotEnoughArgs);
@@ -205,16 +205,16 @@ pub fn Parser(comptime T: type, comptime options: ParserOptions) type {
 
             switch (info) {
                 else => |x| @compileError("TODO support " ++ @tagName(x)),
-                .Void => return {},
-                .Int => {
+                .void => return {},
+                .int => {
                     defer args.* = args.*[1..];
                     return std.fmt.parseInt(V, args.*[0], 10);
                 },
-                .Float => {
+                .float => {
                     defer args.* = args.*[1..];
                     return std.fmt.parseFloat(V, args.*[0]);
                 },
-                .Bool => {
+                .bool => {
                     debug("bool {s} field_name {?s}", .{ args.*[0], field_name });
                     if (field_name) |n| {
                         if (mem.eql(u8, args.*[0], n)) {
@@ -233,7 +233,7 @@ pub fn Parser(comptime T: type, comptime options: ParserOptions) type {
                     try logErr("invalid bool '{s}'\n", .{args.*[0]}, parse_options.err_writer);
                     return err(V, ctx, error.InvalidBoolean);
                 },
-                .Optional => |x| if (mem.eql(u8, args.*[0], "null")) {
+                .optional => |x| if (mem.eql(u8, args.*[0], "null")) {
                     args.* = args.*[1..];
                     return null;
                 } else return try parsePayload(
@@ -245,14 +245,14 @@ pub fn Parser(comptime T: type, comptime options: ParserOptions) type {
                         ct_ctx.outer_desc,
                     ),
                 ),
-                .Enum => if (std.meta.stringToEnum(V, args.*[0])) |e| {
+                .@"enum" => if (std.meta.stringToEnum(V, args.*[0])) |e| {
                     args.* = args.*[1..];
                     return e;
                 } else {
                     try logErr("invalid enum tag '{s}'\n", .{args.*[0]}, parse_options.err_writer);
                     return err(V, ctx, error.InvalidEnum);
                 },
-                .Array => |x| {
+                .array => |x| {
                     if (x.child == u8) {
                         if (args.*[0].len > x.len)
                             return err(V, ctx, error.ArrayTooShort);
@@ -276,7 +276,7 @@ pub fn Parser(comptime T: type, comptime options: ParserOptions) type {
                         return a;
                     }
                 },
-                .Pointer => |x| if (comptime isZigString(V)) {
+                .pointer => |x| if (comptime isZigString(V)) {
                     defer args.* = args.*[1..];
                     return args.*[0];
                 } else switch (x.size) {
@@ -301,7 +301,7 @@ pub fn Parser(comptime T: type, comptime options: ParserOptions) type {
                     },
                     else => @compileError("TODO Pointer support " ++ @tagName(x.size)),
                 },
-                .Union => return try parseUnion(
+                .@"union" => return try parseUnion(
                     V,
                     ctx,
                     CtCtx(V).init(
@@ -310,7 +310,7 @@ pub fn Parser(comptime T: type, comptime options: ParserOptions) type {
                         ct_ctx.outer_desc,
                     ),
                 ),
-                .Struct => |x| return if (x.is_tuple)
+                .@"struct" => |x| return if (x.is_tuple)
                     try parseTuple(V, ctx)
                 else
                     try parseStruct(
@@ -332,7 +332,7 @@ pub fn Parser(comptime T: type, comptime options: ParserOptions) type {
         ) !V {
             const info = @typeInfo(V);
             const clarp_options = ct_ctx.clarp_options;
-            const fields = info.Union.fields;
+            const fields = info.@"union".fields;
             const parse_options = ctx.parse_options;
             const args = ctx.args;
             const FieldEnum = std.meta.FieldEnum(V);
@@ -354,7 +354,7 @@ pub fn Parser(comptime T: type, comptime options: ParserOptions) type {
                         return payload;
                     },
                     .end_mark => return err(V, ctx, error.UnionEndMark),
-                    .short, .long => |fe| if (@typeInfo(FieldEnum).Enum.fields.len > 0) {
+                    .short, .long => |fe| if (@typeInfo(FieldEnum).@"enum".fields.len > 0) {
                         switch (fe) {
                             inline else => |tag| {
                                 debug("found {s} {s} {s}", .{ @tagName(named_option), args.*[0], @tagName(tag) });
@@ -392,7 +392,7 @@ pub fn Parser(comptime T: type, comptime options: ParserOptions) type {
             const parse_options = ctx.parse_options;
             const args = ctx.args;
             const init_args = ctx.init_args;
-            const fields = info.Struct.fields;
+            const fields = info.@"struct".fields;
             const Short = ShortNames(fields, V);
             const FieldEnum = std.meta.FieldEnum(V);
             const kvs = comptime GenKvs(V, Short, FieldEnum, info, clarp_options);
@@ -434,7 +434,7 @@ pub fn Parser(comptime T: type, comptime options: ParserOptions) type {
                             try override(ctx, &payload, &fields_seen);
                             continue :args;
                         },
-                        .short => |fe| if (@typeInfo(FieldEnum).Enum.fields.len > 0) {
+                        .short => |fe| if (@typeInfo(FieldEnum).@"enum".fields.len > 0) {
                             switch (fe) {
                                 inline else => |tag| {
                                     const key: ?[]const u8 = comptime for (map.keys(), map.values()) |k, v| {
@@ -465,7 +465,7 @@ pub fn Parser(comptime T: type, comptime options: ParserOptions) type {
                                 },
                             }
                         },
-                        .long => |fe| if (@typeInfo(FieldEnum).Enum.fields.len > 0) {
+                        .long => |fe| if (@typeInfo(FieldEnum).@"enum".fields.len > 0) {
                             switch (fe) {
                                 inline else => |tag| {
                                     const key: ?[]const u8 = comptime for (map.keys(), map.values()) |k, v| {
@@ -503,12 +503,12 @@ pub fn Parser(comptime T: type, comptime options: ParserOptions) type {
                     const named_option = kv.value;
 
                     switch (named_option) {
-                        .short, .long => |fe| if (@typeInfo(FieldEnum).Enum.fields.len > 0) {
+                        .short, .long => |fe| if (@typeInfo(FieldEnum).@"enum".fields.len > 0) {
                             switch (fe) {
                                 inline else => |tag| {
                                     debug("found {s} {s} {s}", .{ @tagName(named_option), ctx.args.*[0], @tagName(tag) });
                                     const fi = @intFromEnum(tag);
-                                    const Ft = @TypeOf(@field(payload, info.Struct.fields[fi].name));
+                                    const Ft = @TypeOf(@field(payload, info.@"struct".fields[fi].name));
 
                                     const rest = ctx.args.*[0][kv.key.len..];
                                     var tmp_args: []const []const u8 = if (rest.len > 0 and rest[0] == '=')
@@ -520,7 +520,7 @@ pub fn Parser(comptime T: type, comptime options: ParserOptions) type {
                                         Ft,
                                         Ctx.init(ctx.init_args, &tmp_args, ctx.parse_options),
                                         CtCtx(Ft).init(
-                                            info.Struct.fields[fi].name,
+                                            info.@"struct".fields[fi].name,
                                             clarpOptions(Ft),
                                             if (@hasDecl(V, "clarp_options"))
                                                 @field(V.clarp_options.fields, @tagName(tag)).desc
@@ -548,7 +548,7 @@ pub fn Parser(comptime T: type, comptime options: ParserOptions) type {
                     var arg = args.*[0][1..];
                     debug("arg {s} shorts {s}", .{ arg, std.meta.fieldNames(Short) });
                     shorts: while (arg.len > 0) {
-                        inline for (@typeInfo(Short).Enum.fields, 0..) |f, fi| {
+                        inline for (@typeInfo(Short).@"enum".fields, 0..) |f, fi| {
                             if (isFlagType(fields[fi].type) and mem.startsWith(u8, arg, f.name)) {
                                 const Ft = @TypeOf(@field(payload, fields[fi].name));
                                 // construct a fake, single flag arg.  this allows bool fields to work
@@ -589,7 +589,7 @@ pub fn Parser(comptime T: type, comptime options: ParserOptions) type {
                 var it = fields_seen.iterator(.{ .kind = .unset });
                 while (it.next()) |field_idx| {
                     const fe: FieldEnum = @enumFromInt(field_idx);
-                    if (@typeInfo(FieldEnum).Enum.fields.len == 0) continue;
+                    if (@typeInfo(FieldEnum).@"enum".fields.len == 0) continue;
                     switch (fe) {
                         inline else => |tag| {
                             const name = @tagName(tag);
@@ -676,16 +676,16 @@ pub fn Parser(comptime T: type, comptime options: ParserOptions) type {
                         shorts_len += 1;
                     }
                 }
-                const helps_len = @typeInfo(options.help_flags).Enum.fields.len;
+                const helps_len = @typeInfo(options.help_flags).@"enum".fields.len;
 
                 var longs_len: usize = 0;
                 const fields = switch (info) {
-                    .Struct => info.Struct.fields,
-                    .Union => info.Union.fields,
+                    .@"struct" => info.@"struct".fields,
+                    .@"union" => info.@"union".fields,
                     else => unreachable,
                 };
-                const short_prefix: []const u8 = if (info == .Struct) "-" else "";
-                const long_prefix: []const u8 = if (info == .Struct) "--" else "";
+                const short_prefix: []const u8 = if (info == .@"struct") "-" else "";
+                const long_prefix: []const u8 = if (info == .@"struct") "--" else "";
                 fields: for (fields) |f| {
                     // skip long if there is an override with same name
                     if (clarp_options.overrides != null) {
@@ -726,7 +726,7 @@ pub fn Parser(comptime T: type, comptime options: ParserOptions) type {
                     }
                 }
 
-                for (@typeInfo(options.help_flags).Enum.fields) |f| {
+                for (@typeInfo(options.help_flags).@"enum".fields) |f| {
                     kvs[kvidx] = .{ f.name, .help };
                     kvidx += 1;
                 }
@@ -781,7 +781,7 @@ pub fn Parser(comptime T: type, comptime options: ParserOptions) type {
         fn parseTuple(comptime V: type, ctx: Ctx) !V {
             const info = @typeInfo(V);
             const args = ctx.args;
-            const fields = info.Struct.fields;
+            const fields = info.@"struct".fields;
 
             var payload: V = initEmpty(V) catch undefined;
             errdefer deinitPayload(V, payload, ctx.parse_options.allocator);
@@ -879,7 +879,7 @@ pub fn Parser(comptime T: type, comptime options: ParserOptions) type {
                 var cwriter = std.io.countingWriter(writer);
                 const w = cwriter.writer();
                 try w.writeAll("  ");
-                inline for (@typeInfo(options.help_flags).Enum.fields, 0..) |f, i| {
+                inline for (@typeInfo(options.help_flags).@"enum".fields, 0..) |f, i| {
                     if (i != 0) try w.writeAll(", ");
                     try w.writeAll(f.name);
                 }
@@ -940,14 +940,14 @@ pub fn Parser(comptime T: type, comptime options: ParserOptions) type {
             const V = @TypeOf(v);
             switch (@typeInfo(V)) {
                 else => |x| @compileError("TODO " ++ @tagName(x) ++ " " ++ @typeName(V)),
-                .Void => {},
-                .Int, .Bool, .Float => try std.fmt.formatType(v, fmt, fmt_opts, writer, 0),
-                .Array => try std.fmt.formatType(v, "any", fmt_opts, writer, 0),
-                .Optional => if (v) |u|
+                .void => {},
+                .int, .bool, .float => try std.fmt.formatType(v, fmt, fmt_opts, writer, 0),
+                .array => try std.fmt.formatType(v, "any", fmt_opts, writer, 0),
+                .optional => if (v) |u|
                     try dump(u, fmt, fmt_opts, writer, depth)
                 else
                     try writer.writeAll("null"),
-                .Pointer => |x| if (x.child == anyopaque)
+                .pointer => |x| if (x.child == anyopaque)
                     try dump(v, "*", fmt_opts, writer, depth)
                 else switch (x.size) {
                     .Slice => if (comptime isZigString(V))
@@ -962,14 +962,14 @@ pub fn Parser(comptime T: type, comptime options: ParserOptions) type {
                         try dump(v.*, fmt, fmt_opts, writer, depth),
                     else => @compileError("TODO " ++ @tagName(x) ++ " " ++ @typeName(V)),
                 },
-                .Enum => try writer.writeAll(@tagName(v)),
-                .Struct => |x| inline for (x.fields) |f| {
+                .@"enum" => try writer.writeAll(@tagName(v)),
+                .@"struct" => |x| inline for (x.fields) |f| {
                     try writer.writeByte('\n');
                     try writer.writeByteNTimes(' ', depth * 2);
                     try writer.print("{s}: ", .{f.name});
                     try dump(@field(v, f.name), fmt, fmt_opts, writer, depth + 1);
                 },
-                .Union => switch (v) {
+                .@"union" => switch (v) {
                     inline else => |payload, tag| {
                         try writer.writeByte('\n');
                         try writer.writeByteNTimes(' ', depth * 2);
@@ -999,7 +999,7 @@ pub fn Parser(comptime T: type, comptime options: ParserOptions) type {
                 var cwriter = std.io.countingWriter(writer);
                 const w = cwriter.writer();
                 try w.writeAll("  ");
-                inline for (@typeInfo(options.help_flags).Enum.fields, 0..) |f, i| {
+                inline for (@typeInfo(options.help_flags).@"enum".fields, 0..) |f, i| {
                     if (i != 0) try w.writeAll(", ");
                     try w.writeAll(f.name);
                 }
@@ -1017,9 +1017,9 @@ pub fn Parser(comptime T: type, comptime options: ParserOptions) type {
         ) !void {
             switch (@typeInfo(V)) {
                 else => |x| @compileError("TODO " ++ @tagName(x)),
-                .Void, .Bool => {},
-                .Int, .Float => try writer.writeAll(": " ++ @typeName(V)),
-                .Enum => |e| {
+                .void, .bool => {},
+                .int, .float => try writer.writeAll(": " ++ @typeName(V)),
+                .@"enum" => |e| {
                     try writer.writeAll(": enum { ");
                     inline for (e.fields, 0..) |f, i| {
                         if (i != 0) try writer.writeAll(", ");
@@ -1027,16 +1027,16 @@ pub fn Parser(comptime T: type, comptime options: ParserOptions) type {
                     }
                     try writer.writeAll(" }");
                 },
-                .Array => |x| try writer.print(
+                .array => |x| try writer.print(
                     ": [{}]{s}",
                     .{ x.len, @typeName(x.child) },
                 ),
-                .Optional => |x| try writer.print(": ?{s}", .{@typeName(x.child)}),
-                .Pointer => if (comptime isZigString(V))
+                .optional => |x| try writer.print(": ?{s}", .{@typeName(x.child)}),
+                .pointer => if (comptime isZigString(V))
                     try writer.writeAll(": string")
                 else
                     try writer.writeAll(": " ++ @typeName(V)),
-                .Struct => |x| {
+                .@"struct" => |x| {
                     const has_options = @hasDecl(V, "clarp_options");
                     if (has_options and V.clarp_options.help != null) {
                         try writer.writeAll(V.clarp_options.help.?);
@@ -1070,14 +1070,14 @@ pub fn Parser(comptime T: type, comptime options: ParserOptions) type {
                                     try w.print(" = \"{s}\"", .{dv})
                                 else
                                     try w.print(" = {}", .{dv}),
-                                .Enum => try w.print(" = {s}", .{@tagName(dv)}),
-                                .Bool => if (dv) try w.writeAll(" = true"),
+                                .@"enum" => try w.print(" = {s}", .{@tagName(dv)}),
+                                .bool => if (dv) try w.writeAll(" = true"),
                             }
                         }
                         try printDesc(V, writer, f, cwriter.bytes_written);
                     }
                 },
-                .Union => |x| {
+                .@"union" => |x| {
                     const has_options = @hasDecl(V, "clarp_options");
                     if (has_options and V.clarp_options.help != null) {
                         try writer.writeAll(V.clarp_options.help.?);
@@ -1116,11 +1116,11 @@ pub fn Parser(comptime T: type, comptime options: ParserOptions) type {
                     return;
                 }
                 if (V.clarp_options.derive_short_names) {
-                    const short = @typeInfo(ShortNames(vfields, V)).Enum.fields[fieldi];
+                    const short = @typeInfo(ShortNames(vfields, V)).@"enum".fields[fieldi];
                     const info = @typeInfo(V);
                     switch (info) {
-                        .Struct => try writer.print(", -{s}", .{short.name}),
-                        .Union => try writer.print(", {s}", .{short.name}),
+                        .@"struct" => try writer.print(", -{s}", .{short.name}),
+                        .@"union" => try writer.print(", {s}", .{short.name}),
                         else => unreachable,
                     }
                 }
@@ -1154,20 +1154,20 @@ pub fn Parser(comptime T: type, comptime options: ParserOptions) type {
         pub fn deinitPayload(comptime V: type, payload: V, allocator: ?mem.Allocator) void {
             switch (@typeInfo(V)) {
                 else => |x| @compileError("TODO " ++ @tagName(x)),
-                .Void, .Int, .Float, .Bool, .Enum, .Array => {},
-                .Optional => |x| if (payload) |u|
+                .void, .int, .float, .bool, .@"enum", .array => {},
+                .optional => |x| if (payload) |u|
                     deinitPayload(x.child, u, allocator),
-                .Pointer => |x| switch (x.size) {
+                .pointer => |x| switch (x.size) {
                     .Slice => if (!comptime isZigString(V)) {
                         const a = allocator orelse return;
                         a.free(payload);
                     },
                     else => @compileError("TODO Pointer " ++ @tagName(x.size)),
                 },
-                .Struct => |x| inline for (x.fields) |f| {
+                .@"struct" => |x| inline for (x.fields) |f| {
                     deinitPayload(f.type, @field(payload, f.name), allocator);
                 },
-                .Union => switch (payload) {
+                .@"union" => switch (payload) {
                     inline else => |upayload| deinitPayload(@TypeOf(upayload), upayload, allocator),
                 },
             }
@@ -1225,7 +1225,7 @@ fn logErr(comptime fmt: anytype, args: anytype, writer: ?std.io.AnyWriter) !void
 
 fn isContainer(comptime T: type) bool {
     const info = @typeInfo(T);
-    return info == .Struct or info == .Union or info == .Opaque;
+    return info == .@"struct" or info == .@"union" or info == .@"opaque";
 }
 
 fn clarpOptions(comptime T: type) Options(T) {
@@ -1277,7 +1277,7 @@ fn ShortNames(vfields: anytype, comptime V: type) type {
         };
     }
 
-    return @Type(.{ .Enum = .{
+    return @Type(.{ .@"enum" = .{
         .fields = &fields,
         .tag_type = std.math.IntFittingRange(0, vfields.len),
         .decls = &.{},
@@ -1295,18 +1295,18 @@ inline fn mustConsume(comptime U: type) bool {
     comptime {
         const info = @typeInfo(U);
         const result = switch (info) {
-            .Void, .Bool => false,
+            .void, .bool => false,
             // structs are mustConsume if any fields are mustConsume
-            .Struct => |x| for (x.fields) |f| {
+            .@"struct" => |x| for (x.fields) |f| {
                 if (mustConsume(f.type) and
                     f.default_value == null)
                     break true;
             } else false,
-            .Union => true,
-            .Enum, .Int, .Float => true,
-            .Optional => |x| mustConsume(x.child),
-            .Pointer => |x| mustConsume(x.child),
-            .Array => |x| x.len != 0,
+            .@"union" => true,
+            .@"enum", .int, .float => true,
+            .optional => |x| mustConsume(x.child),
+            .pointer => |x| mustConsume(x.child),
+            .array => |x| x.len != 0,
             else => |x| @compileError("TODO " ++ @tagName(x)),
         };
         return result;
@@ -1316,12 +1316,12 @@ inline fn mustConsume(comptime U: type) bool {
 fn initEmpty(comptime V: type) !V {
     const info = @typeInfo(V);
     return switch (info) {
-        .Pointer => |x| switch (x.size) {
+        .pointer => |x| switch (x.size) {
             .Slice => return &.{},
             else => std.debug.panic("TODO {s} {s}", .{ @tagName(x), @typeName(V) }),
         },
-        .Union => error.CantInitEmptyUnion,
-        .Struct => |x| {
+        .@"union" => error.CantInitEmptyUnion,
+        .@"struct" => |x| {
             var v: V = undefined;
             inline for (x.fields) |f| {
                 if (f.default_value) |dv|
@@ -1357,8 +1357,8 @@ fn isZigString(comptime T: type) bool {
     return comptime blk: {
         // Only pointer types can be strings, no optionals
         const info = @typeInfo(T);
-        if (info != .Pointer) break :blk false;
-        const ptr = info.Pointer;
+        if (info != .pointer) break :blk false;
+        const ptr = info.pointer;
         // Check for CV qualifiers that would prevent coerction to []const u8
         if (ptr.is_volatile or ptr.is_allowzero) break :blk false;
         // If it's already a slice, simple check.
@@ -1367,8 +1367,8 @@ fn isZigString(comptime T: type) bool {
         // Otherwise check if it's an array type that coerces to slice.
         // if (ptr.size == .One) {
         //     const child = @typeInfo(ptr.child);
-        //     if (child == .Array) {
-        //         const arr = &child.Array;
+        //     if (child == .array) {
+        //         const arr = &child.array;
         //         break :blk arr.child == u8;
         //     }
         // }
