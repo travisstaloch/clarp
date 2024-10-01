@@ -22,6 +22,8 @@ pub const FieldOption = struct {
     /// marks the field as positional. positional options may be unnamed.
     /// only affects non-tuple structs.
     positional: bool = false,
+    /// if true and the field is an integer type, parse input as a utf8 string
+    utf8: bool = false,
 };
 
 /// any struct or enum passed to `clarp.Parser()` may contain
@@ -145,8 +147,9 @@ pub fn Parser(comptime T: type, comptime options: ParserOptions) type {
             const ctx = Ctx.init(args, &rest, parse_options);
             const result = parsePayload(
                 T,
+                void,
                 ctx,
-                CtCtx(T).init(null, clarp_options, null),
+                CtCtx(T, void).init(null, clarp_options, null),
             ) catch |e| {
                 if (e == error.HelpShown) return e;
                 try printError(parse_options.err_writer, args, rest);
@@ -179,8 +182,10 @@ pub fn Parser(comptime T: type, comptime options: ParserOptions) type {
 
         fn parsePayload(
             comptime V: type,
+            /// parent type
+            comptime P: type,
             ctx: Ctx,
-            comptime ct_ctx: CtCtx(V),
+            comptime ct_ctx: CtCtx(V, P),
         ) !V {
             const info = @typeInfo(V);
             const args = ctx.args;
@@ -208,6 +213,16 @@ pub fn Parser(comptime T: type, comptime options: ParserOptions) type {
                 .void => return {},
                 .int => {
                     defer args.* = args.*[1..];
+                    if (@hasDecl(P, "clarp_options")) {
+                        if (field_name) |fname| {
+                            if (@hasField(P, fname) and
+                                @field(P.clarp_options.fields, fname).utf8)
+                            {
+                                const cp = try std.unicode.utf8Decode(args.*[0]);
+                                return std.math.cast(V, cp) orelse error.Overflow;
+                            }
+                        }
+                    }
                     return std.fmt.parseInt(V, args.*[0], 10);
                 },
                 .float => {
@@ -238,8 +253,9 @@ pub fn Parser(comptime T: type, comptime options: ParserOptions) type {
                     return null;
                 } else return try parsePayload(
                     x.child,
+                    P,
                     ctx,
-                    CtCtx(x.child).init(
+                    CtCtx(x.child, P).init(
                         field_name,
                         clarpOptions(x.child),
                         ct_ctx.outer_desc,
@@ -265,8 +281,9 @@ pub fn Parser(comptime T: type, comptime options: ParserOptions) type {
                         for (&a) |*ele| {
                             ele.* = try parsePayload(
                                 x.child,
+                                P,
                                 ctx,
-                                CtCtx(x.child).init(
+                                CtCtx(x.child, P).init(
                                     field_name,
                                     clarpOptions(x.child),
                                     ct_ctx.outer_desc,
@@ -286,7 +303,7 @@ pub fn Parser(comptime T: type, comptime options: ParserOptions) type {
                         var l = std.ArrayList(x.child).init(ctx.parse_options.allocator.?);
                         errdefer l.deinit();
                         while (args.len > 0 and !std.mem.startsWith(u8, args.*[0], "-")) {
-                            try l.append(try parsePayload(x.child, ctx, CtCtx(x.child).init(
+                            try l.append(try parsePayload(x.child, P, ctx, CtCtx(x.child, P).init(
                                 field_name,
                                 clarpOptions(x.child),
                                 ct_ctx.outer_desc,
@@ -303,8 +320,9 @@ pub fn Parser(comptime T: type, comptime options: ParserOptions) type {
                 },
                 .@"union" => return try parseUnion(
                     V,
+                    P,
                     ctx,
-                    CtCtx(V).init(
+                    CtCtx(V, P).init(
                         field_name,
                         ct_ctx.clarp_options,
                         ct_ctx.outer_desc,
@@ -315,8 +333,9 @@ pub fn Parser(comptime T: type, comptime options: ParserOptions) type {
                 else
                     try parseStruct(
                         V,
+                        P,
                         ctx,
-                        CtCtx(V).init(
+                        CtCtx(V, P).init(
                             field_name,
                             ct_ctx.clarp_options,
                             ct_ctx.outer_desc,
@@ -327,8 +346,9 @@ pub fn Parser(comptime T: type, comptime options: ParserOptions) type {
 
         fn parseUnion(
             comptime V: type,
+            comptime P: type,
             ctx: Ctx,
-            comptime ct_ctx: CtCtx(V),
+            comptime ct_ctx: CtCtx(V, P),
         ) !V {
             const info = @typeInfo(V);
             const clarp_options = ct_ctx.clarp_options;
@@ -362,8 +382,9 @@ pub fn Parser(comptime T: type, comptime options: ParserOptions) type {
                                 const Ft = std.meta.TagPayload(V, tag);
                                 return @unionInit(V, @tagName(tag), try parsePayload(
                                     Ft,
+                                    V,
                                     ctx,
-                                    CtCtx(Ft).init(
+                                    CtCtx(Ft, V).init(
                                         @tagName(tag),
                                         clarpOptions(Ft),
                                         if (@hasDecl(V, "clarp_options"))
@@ -384,8 +405,9 @@ pub fn Parser(comptime T: type, comptime options: ParserOptions) type {
 
         fn parseStruct(
             comptime V: type,
+            comptime P: type,
             ctx: Ctx,
-            comptime ct_ctx: CtCtx(V),
+            comptime ct_ctx: CtCtx(V, P),
         ) !V {
             const info = @typeInfo(V);
             const clarp_options = ct_ctx.clarp_options;
@@ -450,8 +472,9 @@ pub fn Parser(comptime T: type, comptime options: ParserOptions) type {
                                     args.* = args.*[@intFromBool(!isFlagType(Ft))..];
                                     @field(payload, @tagName(tag)) = try parsePayload(
                                         Ft,
+                                        V,
                                         ctx,
-                                        comptime CtCtx(Ft).init(
+                                        comptime CtCtx(Ft, V).init(
                                             key,
                                             clarpOptions(Ft),
                                             if (@hasDecl(V, "clarp_options"))
@@ -481,8 +504,9 @@ pub fn Parser(comptime T: type, comptime options: ParserOptions) type {
                                     args.* = args.*[@intFromBool(!isFlagType(Ft))..];
                                     @field(payload, @tagName(tag)) = try parsePayload(
                                         Ft,
+                                        V,
                                         ctx,
-                                        CtCtx(Ft).init(
+                                        CtCtx(Ft, V).init(
                                             key,
                                             clarpOptions(Ft),
                                             if (@hasDecl(V, "clarp_options"))
@@ -518,8 +542,9 @@ pub fn Parser(comptime T: type, comptime options: ParserOptions) type {
 
                                     @field(payload, @tagName(tag)) = parsePayload(
                                         Ft,
+                                        V,
                                         Ctx.init(ctx.init_args, &tmp_args, ctx.parse_options),
-                                        CtCtx(Ft).init(
+                                        CtCtx(Ft, V).init(
                                             info.@"struct".fields[fi].name,
                                             clarpOptions(Ft),
                                             if (@hasDecl(V, "clarp_options"))
@@ -555,12 +580,13 @@ pub fn Parser(comptime T: type, comptime options: ParserOptions) type {
                                 var tmp_args: []const []const u8 = &[_][]const u8{"--" ++ fields[fi].name};
                                 @field(payload, fields[fi].name) = try parsePayload(
                                     Ft,
+                                    V,
                                     Ctx.init(
                                         init_args,
                                         &tmp_args,
                                         parse_options,
                                     ),
-                                    CtCtx(Ft).init(
+                                    CtCtx(Ft, V).init(
                                         "--" ++ fields[fi].name,
                                         clarpOptions(fields[fi].type),
                                         if (@hasDecl(V, "clarp_options"))
@@ -597,8 +623,9 @@ pub fn Parser(comptime T: type, comptime options: ParserOptions) type {
                             if (@field(clarp_options.fields, name).positional) {
                                 @field(payload, name) = try parsePayload(
                                     Ft,
+                                    V,
                                     ctx,
-                                    CtCtx(Ft).init(
+                                    CtCtx(Ft, V).init(
                                         name,
                                         clarpOptions(Ft),
                                         @field(V.clarp_options.fields, name).desc,
@@ -791,8 +818,9 @@ pub fn Parser(comptime T: type, comptime options: ParserOptions) type {
                 if (args.len == 0) return error.MissingFields;
                 @field(payload, f.name) = try parsePayload(
                     f.type,
+                    V,
                     ctx,
-                    CtCtx(f.type).init(
+                    CtCtx(f.type, V).init(
                         f.name,
                         clarpOptions(f.type),
                         if (@hasDecl(V, "clarp_options"))
@@ -1193,11 +1221,13 @@ pub const Ctx = struct {
     }
 };
 
-fn CtCtx(comptime V: type) type {
+fn CtCtx(comptime V: type, comptime P: type) type {
     return struct {
         field_name: ?[]const u8, // TODO rename to something like field_key since its meaning has changed.
         clarp_options: Options(V),
         outer_desc: ?[]const u8,
+
+        const Parent = P;
 
         pub fn init(
             field_name: ?[]const u8,

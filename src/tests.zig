@@ -255,6 +255,20 @@ test "overrides" {
     }, .{});
 
     try expectFn(P2)(argv("foo 99"), .{ .foo = 99 });
+
+    const P3 = clarp.Parser(struct {
+        file: []const u8,
+        codepoint: u21,
+        const Self = @This();
+        pub const clarp_options = clarp.Options(Self){
+            .fields = .{
+                .file = .{ .positional = true },
+                .codepoint = .{ .positional = true, .utf8 = true },
+            },
+        };
+    }, .{});
+    try expectFn(P3)(argv("file a"), .{ .file = "file", .codepoint = 'a' });
+    try expectFn(P3)(argv("file 👏"), .{ .file = "file", .codepoint = '👏' });
 }
 
 const SimpleOptions = clarp.Parser(struct {

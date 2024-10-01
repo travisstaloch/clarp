@@ -6,6 +6,7 @@ Derive command line parsers from union and struct types.  Provides nested, conte
 
 * field types
   * int, bool, enum, float, optional, array, slice
+    * integer fields may be parsed as utf8 by setting `clarp_options.fields.<field_name>.utf8`
   * nested unions and structs
 * help / usage
   * automatically printed on parsing errors
@@ -39,7 +40,7 @@ Bool fields create 'flags' and may be specified as `--flag` or `true`/`false` wh
 Slice fields require an allocator and consume input until an argument is found which starts with '-' or end of arguments. `clarp_options.end_marker` may also be used to mark the end of field's arguments.  This may be necessary with unnamed, positional fields.  An Allocator can be passed as `ParseOptions.allocator`.
 
 ## Zig version
-This package is developed with zig master branch.  Zig 0.12 users should use the [0.12.0 tag](https://github.com/travisstaloch/clarp/tree/0.12.0).
+This package is developed with zig master branch.  There are also [tagged releases](https://github.com/travisstaloch/clarp/tags) for previous compiler versions.
 
 # Usage
 You can find many examples in the [tests](src/tests.zig).
