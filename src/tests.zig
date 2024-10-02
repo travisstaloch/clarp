@@ -255,20 +255,6 @@ test "overrides" {
     }, .{});
 
     try expectFn(P2)(argv("foo 99"), .{ .foo = 99 });
-
-    const P3 = clarp.Parser(struct {
-        file: []const u8,
-        codepoint: u21,
-        const Self = @This();
-        pub const clarp_options = clarp.Options(Self){
-            .fields = .{
-                .file = .{ .positional = true },
-                .codepoint = .{ .positional = true, .utf8 = true },
-            },
-        };
-    }, .{});
-    try expectFn(P3)(argv("file a"), .{ .file = "file", .codepoint = 'a' });
-    try expectFn(P3)(argv("file 👏"), .{ .file = "file", .codepoint = '👏' });
 }
 
 const SimpleOptions = clarp.Parser(struct {
@@ -822,4 +808,38 @@ test "union field name overrides" {
     const expect = expectFn(P);
     try expect(argv("foo-long"), .{ .foo = true });
     try expect(argv("fo"), .{ .foo = true });
+}
+
+test "utf8 codepoint" {
+    const P1 = clarp.Parser(struct {
+        codepoint: u21,
+        const Self = @This();
+        pub const clarp_options = clarp.Options(Self){
+            .fields = .{
+                .codepoint = .{ .positional = true, .utf8 = true },
+            },
+        };
+    }, .{});
+    try expectFn(P1)(argv("a"), .{ .codepoint = 'a' });
+    try expectFn(P1)(argv("👏"), .{ .codepoint = '👏' });
+}
+
+test "integer parsing" {
+    const P1 = clarp.Parser(struct {
+        int: isize,
+        const Self = @This();
+        pub const clarp_options = clarp.Options(Self){
+            .fields = .{
+                .int = .{ .positional = true },
+            },
+        };
+    }, .{});
+    try expectFn(P1)(argv("123"), .{ .int = 123 });
+    try expectFn(P1)(argv("-123"), .{ .int = -123 });
+    try expectFn(P1)(argv("0x123"), .{ .int = 0x123 });
+    try expectFn(P1)(argv("-0x123"), .{ .int = -0x123 });
+    try expectFn(P1)(argv("0b101"), .{ .int = 0b101 });
+    try expectFn(P1)(argv("-0b101"), .{ .int = -0b101 });
+    try expectFn(P1)(argv("0o101"), .{ .int = 0o101 });
+    try expectFn(P1)(argv("-0o101"), .{ .int = -0o101 });
 }

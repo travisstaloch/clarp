@@ -213,17 +213,20 @@ pub fn Parser(comptime T: type, comptime options: ParserOptions) type {
                 .void => return {},
                 .int => {
                     defer args.* = args.*[1..];
-                    if (@hasDecl(P, "clarp_options")) {
-                        if (field_name) |fname| {
-                            if (@hasField(P, fname) and
-                                @field(P.clarp_options.fields, fname).utf8)
-                            {
-                                const cp = try std.unicode.utf8Decode(args.*[0]);
-                                return std.math.cast(V, cp) orelse error.Overflow;
-                            }
+                    if (@hasDecl(P, "clarp_options") and field_name != null) {
+                        const fname = field_name.?;
+                        if (@hasField(P, fname) and
+                            @field(P.clarp_options.fields, fname).utf8)
+                        {
+                            if (std.unicode.utf8ByteSequenceLength(args.*[0][0])) |cplen| {
+                                if (std.unicode.utf8ValidateSlice(args.*[0][0..cplen])) blk: {
+                                    const cp = std.unicode.utf8Decode(args.*[0][0..cplen]) catch break :blk;
+                                    if (std.math.cast(V, cp)) |int| return int;
+                                }
+                            } else |_| {}
                         }
                     }
-                    return std.fmt.parseInt(V, args.*[0], 10);
+                    return std.fmt.parseInt(V, args.*[0], 0);
                 },
                 .float => {
                     defer args.* = args.*[1..];
