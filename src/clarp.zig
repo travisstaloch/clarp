@@ -1103,6 +1103,7 @@ pub fn Parser(comptime T: type, comptime options: ParserOptions) type {
                                     try w.print(" = {}", .{dv}),
                                 .@"enum" => try w.print(" = {s}", .{@tagName(dv)}),
                                 .bool => if (dv) try w.writeAll(" = true"),
+                                .optional => if (dv) |v| try w.print(" = {}", .{v}) else try w.writeAll(" = null"),
                             }
                         }
                         try printDesc(V, writer, f, cwriter.bytes_written);

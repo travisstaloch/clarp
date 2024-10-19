@@ -843,3 +843,19 @@ test "integer parsing" {
     try expectFn(P1)(argv("0o101"), .{ .int = 0o101 });
     try expectFn(P1)(argv("-0o101"), .{ .int = -0o101 });
 }
+
+test "optional fields" {
+    const P1 = clarp.Parser(struct {
+        file: []const u8,
+        codepoint: ?u21 = null,
+        pub const clarp_options = clarp.Options(@This()){
+            .derive_short_names = true,
+            .fields = .{
+                .file = .{ .positional = true },
+                .codepoint = .{ .positional = true, .utf8 = true },
+            },
+        };
+    }, .{});
+    try expectFn(P1)(argv("foo C"), .{ .file = "foo", .codepoint = 'C' });
+    try expectFn(P1)(argv("foo"), .{ .file = "foo", .codepoint = null });
+}
