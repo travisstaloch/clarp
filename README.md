@@ -1,3 +1,12 @@
+# Why was this project archived?
+
+Complexity, bloat and long compile times.
+
+# Recommended alternatives
+
+* https://github.com/Games-by-Mason/structopt
+* https://github.com/travisstaloch/flagset 
+
 # About
 
 Derive command line parsers from union and struct types.  Provides nested, context aware usage text similar to the zig compiler.  Works with existing data structures you may not control.
